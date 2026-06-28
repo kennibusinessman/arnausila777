@@ -12,6 +12,9 @@ frontend/.turbo/
 .env*.local
 !.env.local.example
 
+# Прод-секреты (есть .env.prod.example — его коммитим, реальный .env.prod нет)
+.env.prod
+
 # ── Python (backend / .venv) ───────────────────────────────
 .venv/
 venv/

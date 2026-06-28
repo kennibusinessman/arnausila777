@@ -1,0 +1,13 @@
+# Один домен на весь проект. Caddy сам получает HTTPS-сертификат Let's Encrypt.
+# {$DOMAIN} подставляется из переменной окружения (см. docker-compose.prod.yml).
+{$DOMAIN} {
+	# Запросы к API → FastAPI
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Всё остальное → Next.js
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

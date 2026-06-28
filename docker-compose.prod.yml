@@ -1,0 +1,68 @@
+# Прод-стек: Postgres + FastAPI + Next.js + Caddy (reverse-proxy с авто-HTTPS).
+# Запуск:  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+services:
+  db:
+    image: postgres:16
+    container_name: crm_db_prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # Наружу НЕ публикуем — БД доступна только бэкенду по внутренней сети.
+
+  backend:
+    build: ./backend
+    container_name: crm_backend_prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: '["https://${DOMAIN}"]'
+      ALLOW_NEGATIVE_STOCK: "false"
+      REVENUE_MODE_DEFAULT: shipments
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD}
+      SUPERADMIN_NAME: ${SUPERADMIN_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # Порт наружу не нужен — Caddy проксирует на backend:8000 по внутренней сети.
+
+  frontend:
+    build:
+      context: ./frontend
+      # API берётся с того же домена (относительный /api) — build-arg не нужен.
+    container_name: crm_frontend_prod
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: crm_caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
