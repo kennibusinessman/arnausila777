@@ -1,0 +1,44 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Таблица данных — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--primary:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 16px}
+  .wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;max-width:760px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);
+    padding:11px 14px;background:#f8fafc;border-bottom:1px solid var(--border);font-weight:700}
+  tbody td{padding:11px 14px;border-bottom:1px solid #f1f5f9}
+  tbody tr:hover{background:#f8fafc}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .id{font-weight:600;color:var(--primary)}
+  .badge{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px}
+  .green{background:#dcfce7;color:#166534}.amber{background:#fef3c7;color:#92400e}.indigo{background:#eef2ff;color:#4338ca}.gray{background:#f1f5f9;color:#475569}
+  .bar{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-top:1px solid var(--border);color:var(--muted);font-size:12.5px}
+  .pg{display:flex;gap:6px}
+  .pg b{background:var(--primary);color:#fff;border-radius:6px;padding:3px 9px;font-size:12px}
+  .pg span{border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:12px}
+</style>
+</head>
+<body>
+  <h1>Таблица заказов</h1>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Номер</th><th>Клиент</th><th>Статус</th><th>Срок</th><th class="num">Сумма</th></tr></thead>
+      <tbody>
+        <tr><td class="id">ORD-20260624-0001</td><td>ТОО «Астана Текстиль»</td><td><span class="badge indigo">В производстве</span></td><td>15.07.2026</td><td class="num">6 001,00</td></tr>
+        <tr><td class="id">ORD-20260624-0002</td><td>ИП Сулейменов</td><td><span class="badge amber">Готов к отгрузке</span></td><td>02.07.2026</td><td class="num">7 502,50</td></tr>
+        <tr><td class="id">ORD-20260623-0007</td><td>ТОО «Караван-Пак»</td><td><span class="badge green">Отгружен</span></td><td>28.06.2026</td><td class="num">128 400,00</td></tr>
+        <tr><td class="id">ORD-20260623-0004</td><td>ИП Ахметова</td><td><span class="badge gray">Новый</span></td><td>—</td><td class="num">3 200,00</td></tr>
+      </tbody>
+    </table>
+    <div class="bar"><span>Показано 1–4 из 37</span><div class="pg"><span>‹</span><b>1</b><span>2</span><span>3</span><span>›</span></div></div>
+  </div>
+</body>
+</html>

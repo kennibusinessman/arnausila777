@@ -1,0 +1,32 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KPI-карточки — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--primary:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;max-width:680px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .kpi .label{font-size:12.5px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .kpi .val{font-size:26px;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums}
+  .kpi .delta{font-size:12.5px;font-weight:600;margin-top:6px}
+  .up{color:#16a34a} .down{color:#dc2626}
+  .ic{width:30px;height:30px;border-radius:8px;background:#eff6ff}
+  .ic.g{background:#dcfce7} .ic.r{background:#fee2e2} .ic.a{background:#fef3c7}
+</style>
+</head>
+<body>
+  <h1>KPI-карточки дашборда</h1>
+  <div class="grid">
+    <div class="kpi"><div class="label">Выручка за месяц<span class="ic"></span></div><div class="val">4 250 000 ₸</div><div class="delta up">▲ 12,4% к прошлому</div></div>
+    <div class="kpi"><div class="label">Расходы<span class="ic a"></span></div><div class="val">1 980 000 ₸</div><div class="delta down">▲ 4,1%</div></div>
+    <div class="kpi"><div class="label">Чистая прибыль<span class="ic g"></span></div><div class="val">2 270 000 ₸</div><div class="delta up">▲ 18,9%</div></div>
+    <div class="kpi"><div class="label">Дебиторка<span class="ic r"></span></div><div class="val">860 400 ₸</div><div class="delta">9 клиентов</div></div>
+  </div>
+</body>
+</html>

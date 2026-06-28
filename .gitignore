@@ -1,0 +1,39 @@
+# ── Node / Next.js (frontend) ──────────────────────────────
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+*.tsbuildinfo
+.npm/
+
+# Локальные env (start.sh генерирует frontend/.env.local заново)
+.env
+.env*.local
+!.env.local.example
+
+# ── Python (backend / .venv) ───────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Docker / данные БД ─────────────────────────────────────
+pgdata/
+
+# ── IDE / OS ───────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# ── Claude Code (личные настройки машины) ──────────────────
+.claude/settings.local.json
+
+# ── Прочее ─────────────────────────────────────────────────
+*.log

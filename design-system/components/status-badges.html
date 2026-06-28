@@ -1,0 +1,56 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Статусы — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 4px}
+  p.sub{margin:0 0 20px;color:var(--muted);font-size:13px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 10px}
+  .row{display:flex;flex-wrap:wrap;gap:8px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
+    padding:4px 10px;border-radius:999px;border:1px solid transparent}
+  .badge .dot{width:7px;height:7px;border-radius:50%}
+  .gray{background:#f1f5f9;color:#475569} .gray .dot{background:#94a3b8}
+  .blue{background:#eff6ff;color:#1d4ed8} .blue .dot{background:#2563eb}
+  .indigo{background:#eef2ff;color:#4338ca} .indigo .dot{background:#4f46e5}
+  .amber{background:#fef3c7;color:#92400e} .amber .dot{background:#d97706}
+  .green{background:#dcfce7;color:#166534} .green .dot{background:#16a34a}
+  .red{background:#fee2e2;color:#991b1b} .red .dot{background:#dc2626}
+  .slate{background:#e2e8f0;color:#334155} .slate .dot{background:#64748b}
+</style>
+</head>
+<body>
+  <h1>Статусные бейджи</h1>
+  <p class="sub">Единая цветовая логика по всем сущностям: серый — черновик/новое, синий/индиго — в работе, янтарь — готово к действию, зелёный — завершено, красный — отменено/отклонено.</p>
+
+  <h2>Заказ</h2>
+  <div class="row">
+    <span class="badge gray"><span class="dot"></span>Новый</span>
+    <span class="badge indigo"><span class="dot"></span>В производстве</span>
+    <span class="badge amber"><span class="dot"></span>Готов к отгрузке</span>
+    <span class="badge green"><span class="dot"></span>Отгружен</span>
+    <span class="badge red"><span class="dot"></span>Отменён</span>
+  </div>
+
+  <h2>Сменный отчёт / Расход</h2>
+  <div class="row">
+    <span class="badge slate"><span class="dot"></span>Черновик</span>
+    <span class="badge blue"><span class="dot"></span>На утверждении</span>
+    <span class="badge green"><span class="dot"></span>Утверждён</span>
+    <span class="badge red"><span class="dot"></span>Отклонён</span>
+  </div>
+
+  <h2>Отгрузка</h2>
+  <div class="row">
+    <span class="badge slate"><span class="dot"></span>Черновик</span>
+    <span class="badge green"><span class="dot"></span>Подтверждена</span>
+    <span class="badge red"><span class="dot"></span>Отменена</span>
+  </div>
+</body>
+</html>

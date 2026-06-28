@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spunbond CRM — Design System</title>
+<style>
+  :root{--bg:#f1f5f9;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--primary:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text)}
+  header{background:#0f172a;color:#fff;padding:22px 28px}
+  header h1{margin:0;font-size:20px}
+  header p{margin:4px 0 0;color:#94a3b8;font-size:13px}
+  main{padding:24px 28px;max-width:1200px;margin:0 auto}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:28px 0 14px;border-bottom:1px solid var(--border);padding-bottom:8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px #0f172a0d}
+  .card .cap{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}
+  .card .cap b{font-size:13.5px}
+  .card .cap a{font-size:12px;color:var(--primary);text-decoration:none}
+  .frame{width:100%;height:300px;border:0;background:#f8fafc;display:block}
+  .frame.tall{height:420px}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Spunbond CRM — Design System</h1>
+    <p>Локальная галерея компонентов · 12 превью · откройте любой файл напрямую для полноразмерного просмотра</p>
+  </header>
+  <main>
+    <h2>Основы</h2>
+    <div class="grid">
+      <div class="card"><div class="cap"><b>Цвета</b><a href="foundations/colors.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="foundations/colors.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Типографика</b><a href="foundations/typography.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="foundations/typography.html"></iframe></div>
+    </div>
+
+    <h2>Компоненты</h2>
+    <div class="grid">
+      <div class="card"><div class="cap"><b>Кнопки</b><a href="components/buttons.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="components/buttons.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Поля форм</b><a href="components/forms.html" target="_blank">открыть ↗</a></div><iframe class="frame tall" src="components/forms.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Статусные бейджи</b><a href="components/status-badges.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="components/status-badges.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Индикаторы склада</b><a href="components/stock-indicators.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="components/stock-indicators.html"></iframe></div>
+      <div class="card"><div class="cap"><b>KPI-карточки</b><a href="components/kpi-cards.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="components/kpi-cards.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Таблица данных</b><a href="components/data-table.html" target="_blank">открыть ↗</a></div><iframe class="frame" src="components/data-table.html"></iframe></div>
+    </div>
+
+    <h2>Паттерны</h2>
+    <div class="grid">
+      <div class="card"><div class="cap"><b>Каркас приложения</b><a href="patterns/app-shell.html" target="_blank">открыть ↗</a></div><iframe class="frame tall" src="patterns/app-shell.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Дашборд P&amp;L</b><a href="patterns/dashboard.html" target="_blank">открыть ↗</a></div><iframe class="frame tall" src="patterns/dashboard.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Вход</b><a href="patterns/login.html" target="_blank">открыть ↗</a></div><iframe class="frame tall" src="patterns/login.html"></iframe></div>
+      <div class="card"><div class="cap"><b>Сменный отчёт (моб.)</b><a href="patterns/shift-report-mobile.html" target="_blank">открыть ↗</a></div><iframe class="frame tall" src="patterns/shift-report-mobile.html"></iframe></div>
+    </div>
+  </main>
+</body>
+</html>

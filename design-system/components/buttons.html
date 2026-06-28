@@ -1,0 +1,61 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кнопки — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;
+    --primary:#2563eb;--primary-hover:#1d4ed8;--danger:#dc2626;--success:#16a34a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 4px}
+  p.sub{margin:0 0 20px;color:var(--muted);font-size:13px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 10px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .btn{font:inherit;font-weight:600;font-size:14px;border-radius:8px;border:1px solid transparent;
+    padding:9px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;line-height:1}
+  .btn.sm{padding:6px 12px;font-size:13px}
+  .btn.lg{padding:12px 20px;font-size:15px}
+  .primary{background:var(--primary);color:#fff}
+  .primary:hover{background:var(--primary-hover)}
+  .secondary{background:#fff;color:var(--text);border-color:var(--border)}
+  .secondary:hover{background:#f1f5f9}
+  .ghost{background:transparent;color:var(--primary)}
+  .ghost:hover{background:#eff6ff}
+  .danger{background:var(--danger);color:#fff}
+  .success{background:var(--success);color:#fff}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .ico{width:16px;height:16px;display:inline-block;border-radius:3px;background:currentColor;opacity:.85;
+    -webkit-mask:none}
+</style>
+</head>
+<body>
+  <h1>Кнопки</h1>
+  <p class="sub">Варианты и размеры. Primary — основное действие на экране (одно), остальные — вторичные.</p>
+
+  <h2>Варианты</h2>
+  <div class="row">
+    <button class="btn primary">Создать заказ</button>
+    <button class="btn secondary">Отмена</button>
+    <button class="btn ghost">Подробнее</button>
+    <button class="btn success">Утвердить</button>
+    <button class="btn danger">Отклонить</button>
+  </div>
+
+  <h2>Размеры</h2>
+  <div class="row">
+    <button class="btn primary sm">Small</button>
+    <button class="btn primary">Medium</button>
+    <button class="btn primary lg">Large</button>
+  </div>
+
+  <h2>С иконкой и состояние disabled</h2>
+  <div class="row">
+    <button class="btn primary"><span class="ico"></span>Добавить оплату</button>
+    <button class="btn secondary"><span class="ico"></span>Экспорт</button>
+    <button class="btn primary" disabled>Сохранение…</button>
+  </div>
+</body>
+</html>

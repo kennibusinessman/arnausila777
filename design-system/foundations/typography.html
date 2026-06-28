@@ -1,0 +1,34 @@
+<!-- @dsCard group="Основы" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Типографика — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--primary:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 20px}
+  .row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+  .row .spec{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .display{font-size:30px;font-weight:700;letter-spacing:-.02em}
+  .h1{font-size:22px;font-weight:700}
+  .h2{font-size:18px;font-weight:600}
+  .h3{font-size:15px;font-weight:600}
+  .body{font-size:14px}
+  .small{font-size:13px;color:var(--muted)}
+  .num{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+  <h1>Типографика</h1>
+  <div class="row"><div class="display">Производство 2 450 руб.</div><div class="spec">Display · 30 / 700</div></div>
+  <div class="row"><div class="h1">Заказы и отгрузки</div><div class="spec">H1 · 22 / 700</div></div>
+  <div class="row"><div class="h2">Сменный отчёт №42</div><div class="spec">H2 · 18 / 600</div></div>
+  <div class="row"><div class="h3">Позиции заказа</div><div class="spec">H3 · 15 / 600</div></div>
+  <div class="row"><div class="body">Основной текст интерфейса — таблицы, формы, описания.</div><div class="spec">Body · 14 / 400</div></div>
+  <div class="row"><div class="small">Подписи, подсказки, вторичная информация.</div><div class="spec">Small · 13 / muted</div></div>
+  <div class="row"><div class="num">1 234 567,89 ₸</div><div class="spec">Числа · tabular-nums</div></div>
+</body>
+</html>

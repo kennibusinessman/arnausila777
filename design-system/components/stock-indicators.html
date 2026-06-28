@@ -1,0 +1,34 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Индикаторы склада — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 4px}
+  p.sub{margin:0 0 20px;color:var(--muted);font-size:13px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;max-width:560px}
+  .card{background:var(--surface);border:1px solid var(--border);border-left-width:4px;border-radius:10px;padding:12px 14px}
+  .card.ok{border-left-color:#16a34a} .card.low{border-left-color:#d97706} .card.no{border-left-color:#dc2626}
+  .name{font-size:13px;font-weight:600;margin-bottom:8px}
+  .qty{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .qty span{font-size:13px;font-weight:500;color:var(--muted);margin-left:4px}
+  .tag{float:right;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .tag.ok{background:#dcfce7;color:#166534} .tag.low{background:#fef3c7;color:#92400e} .tag.no{background:#fee2e2;color:#991b1b}
+</style>
+</head>
+<body>
+  <h1>Индикаторы остатков</h1>
+  <p class="sub">Светофор для склада: зелёный — есть, янтарь — мало (ниже порога), красный — нет. На мобильном выводится карточками.</p>
+  <div class="cards">
+    <div class="card ok"><span class="tag ok">Есть</span><div class="name">Спанбонд 30 г/м²</div><div class="qty">1 240<span>рул.</span></div></div>
+    <div class="card low"><span class="tag low">Мало</span><div class="name">Спанбонд 60 г/м²</div><div class="qty">48<span>рул.</span></div></div>
+    <div class="card no"><span class="tag no">Нет</span><div class="name">Гранулы ПП</div><div class="qty">0<span>кг</span></div></div>
+    <div class="card ok"><span class="tag ok">Есть</span><div class="name">Краситель синий</div><div class="qty">320<span>кг</span></div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    container_name: crm_db
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: crm_backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://crm:crm@db:5432/crm
+      JWT_SECRET: change-me-in-production
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000"]}'
+      ALLOW_NEGATIVE_STOCK: "false"
+      REVENUE_MODE_DEFAULT: shipments
+      SUPERADMIN_EMAIL: admin@example.com
+      SUPERADMIN_PASSWORD: admin12345
+      SUPERADMIN_NAME: Super Admin
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

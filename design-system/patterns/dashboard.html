@@ -1,0 +1,74 @@
+<!-- @dsCard group="Паттерны" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дашборд P&L — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;--primary:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  h1{font-size:18px;margin:0}
+  .toggle{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:12.5px}
+  .toggle b{background:var(--primary);color:#fff;padding:6px 12px}
+  .toggle span{padding:6px 12px;color:var(--muted);background:#fff}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .kpi .l{font-size:12px;color:var(--muted);font-weight:600}
+  .kpi .v{font-size:21px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+  .panels{display:grid;grid-template-columns:1.6fr 1fr;gap:14px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .panel h3{font-size:13px;margin:0 0 14px}
+  .chart{display:flex;align-items:flex-end;gap:14px;height:150px;padding-top:8px}
+  .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .bars{width:100%;display:flex;gap:5px;align-items:flex-end;height:130px;justify-content:center}
+  .bars i{width:14px;border-radius:4px 4px 0 0;display:block}
+  .rev{background:#2563eb}.exp{background:#f59e0b}
+  .col small{font-size:11px;color:var(--muted)}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:10px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .donut{width:120px;height:120px;border-radius:50%;margin:6px auto;
+    background:conic-gradient(#2563eb 0 45%,#f59e0b 45% 70%,#16a34a 70% 88%,#94a3b8 88% 100%)}
+  .donut::after{content:"";display:block;width:64px;height:64px;border-radius:50%;background:#fff;margin:28px auto}
+  .lrows{font-size:12.5px}
+  .lrows div{display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #f1f5f9}
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Дашборд · P&L</h1>
+    <div class="toggle"><b>По отгрузкам</b><span>По оплатам</span></div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Выручка</div><div class="v">4 250 000</div></div>
+    <div class="kpi"><div class="l">Расходы</div><div class="v">1 980 000</div></div>
+    <div class="kpi"><div class="l">Прибыль</div><div class="v">2 270 000</div></div>
+    <div class="kpi"><div class="l">Дебиторка</div><div class="v">860 400</div></div>
+  </div>
+  <div class="panels">
+    <div class="panel">
+      <h3>Выручка и расходы по месяцам</h3>
+      <div class="chart">
+        <div class="col"><div class="bars"><i class="rev" style="height:60%"></i><i class="exp" style="height:38%"></i></div><small>Фев</small></div>
+        <div class="col"><div class="bars"><i class="rev" style="height:72%"></i><i class="exp" style="height:44%"></i></div><small>Мар</small></div>
+        <div class="col"><div class="bars"><i class="rev" style="height:55%"></i><i class="exp" style="height:50%"></i></div><small>Апр</small></div>
+        <div class="col"><div class="bars"><i class="rev" style="height:84%"></i><i class="exp" style="height:46%"></i></div><small>Май</small></div>
+        <div class="col"><div class="bars"><i class="rev" style="height:95%"></i><i class="exp" style="height:42%"></i></div><small>Июн</small></div>
+      </div>
+      <div class="legend"><span><i class="rev"></i>Выручка</span><span><i class="exp"></i>Расходы</span></div>
+    </div>
+    <div class="panel">
+      <h3>Расходы по категориям</h3>
+      <div class="donut"></div>
+      <div class="lrows">
+        <div><span>Закуп сырья</span><b>45%</b></div>
+        <div><span>Операционные</span><b>25%</b></div>
+        <div><span>Зарплата</span><b>18%</b></div>
+        <div><span>Прочее</span><b>12%</b></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

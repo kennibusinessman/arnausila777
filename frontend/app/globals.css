@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* Design System: Premium CRM Glassmorphism — синий/фиолетовый градиентный акцент,
+   плотное стекло, мягкий студийный фон с плавающими цветными пятнами. */
+@theme {
+  --color-bg: #eef1f6;
+  --color-surface: #ffffff;
+  --color-border: rgba(40, 40, 60, 0.1);
+  --color-text: #1c1c22;
+  --color-muted: rgba(40, 40, 60, 0.5);
+
+  --color-primary: #5b8def;
+  --color-primary-hover: #4a7bd9;
+  --color-primary-50: #e9eefc;
+  --color-indigo: #8d6bff;
+
+  --color-success: #1f9d63;
+  --color-success-bg: rgba(31, 157, 99, 0.12);
+  --color-warning: #f0a23c;
+  --color-warning-bg: rgba(240, 162, 60, 0.13);
+  --color-danger: #d6553f;
+  --color-danger-bg: rgba(214, 85, 63, 0.12);
+  --color-info: #0ea5b7;
+  --color-info-bg: rgba(14, 165, 183, 0.12);
+
+  --color-sidebar: #1c1c22;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue",
+    Helvetica, Arial, sans-serif;
+}
+
+@keyframes floatBlob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, -24px) scale(1.06); }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+body {
+  background-color: var(--color-bg);
+  background-image: linear-gradient(135deg, #eef1f6 0%, #e7ecf3 40%, #eceef4 100%);
+  background-attachment: fixed;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* clip (не hidden) обрезает уходящие за край фоновые пятна, не ломая position: sticky сайдбара */
+  overflow-x: clip;
+}
+
+/* Плавающие цветные пятна студийного фона — просвечивают сквозь стеклянные панели. */
+.blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(20px);
+  z-index: -1;
+  pointer-events: none;
+}
+.blob-1 {
+  top: -120px;
+  left: -80px;
+  width: 620px;
+  height: 620px;
+  background: radial-gradient(circle at 30% 30%, rgba(120, 165, 255, 0.55), rgba(120, 165, 255, 0) 70%);
+  animation: floatBlob 18s ease-in-out infinite;
+}
+.blob-2 {
+  top: 120px;
+  right: -140px;
+  width: 680px;
+  height: 680px;
+  background: radial-gradient(circle at 50% 50%, rgba(196, 150, 255, 0.5), rgba(196, 150, 255, 0) 70%);
+  animation: floatBlob 22s ease-in-out infinite reverse;
+}
+.blob-3 {
+  bottom: -180px;
+  left: 38%;
+  width: 640px;
+  height: 640px;
+  background: radial-gradient(circle at 50% 50%, rgba(120, 225, 225, 0.42), rgba(120, 225, 225, 0) 70%);
+  animation: floatBlob 26s ease-in-out infinite;
+}
+
+/* Стеклянные карточки: плотное размытие + тонкая светлая кромка-«отражение». */
+.glass {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 16px 40px rgba(40, 50, 90, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* Усиленное стекло — модалки, выпадающие списки, форма входа. */
+.glass-strong {
+  background: rgba(248, 250, 255, 0.92);
+  backdrop-filter: blur(44px) saturate(180%);
+  -webkit-backdrop-filter: blur(44px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 40px 100px rgba(30, 40, 80, 0.28);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 140, 0.22);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

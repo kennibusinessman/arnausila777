@@ -1,0 +1,58 @@
+<!-- @dsCard group="Компоненты" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Поля форм — Spunbond CRM</title>
+<style>
+  :root{--bg:#f8fafc;--surface:#fff;--border:#e2e8f0;--text:#0f172a;--muted:#64748b;
+    --primary:#2563eb;--danger:#dc2626;--danger-bg:#fee2e2}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Inter,sans-serif;background:var(--bg);color:var(--text);padding:24px}
+  h1{font-size:18px;margin:0 0 20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:480px}
+  .field{margin-bottom:16px}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  label .req{color:var(--danger)}
+  .control{width:100%;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--border);
+    border-radius:8px;background:#fff;color:var(--text)}
+  .control:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px #2563eb22}
+  select.control{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#64748b 50%),linear-gradient(135deg,#64748b 50%,transparent 50%);
+    background-position:calc(100% - 18px) 17px,calc(100% - 13px) 17px;background-size:5px 5px;background-repeat:no-repeat}
+  .hint{font-size:12px;color:var(--muted);margin-top:5px}
+  .field.error .control{border-color:var(--danger);background:#fff5f5}
+  .err{font-size:12px;color:var(--danger);margin-top:5px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+</style>
+</head>
+<body>
+  <h1>Поля форм</h1>
+  <div class="card">
+    <div class="field">
+      <label>Клиент <span class="req">*</span></label>
+      <select class="control"><option>ТОО «Астана Текстиль»</option><option>ИП Сулейменов</option></select>
+    </div>
+    <div class="two">
+      <div class="field">
+        <label>Срок исполнения</label>
+        <input class="control" type="date" value="2026-07-15">
+      </div>
+      <div class="field">
+        <label>Сумма</label>
+        <input class="control" type="text" value="6 001,00" inputmode="decimal">
+        <div class="hint">Считается автоматически по позициям</div>
+      </div>
+    </div>
+    <div class="field error">
+      <label>Email</label>
+      <input class="control" type="email" value="astana.tekstil@">
+      <div class="err">Некорректный адрес электронной почты</div>
+    </div>
+    <div class="field">
+      <label>Комментарий</label>
+      <textarea class="control" rows="3">Срочный заказ, отгрузка частями.</textarea>
+    </div>
+  </div>
+</body>
+</html>

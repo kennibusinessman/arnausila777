@@ -1,0 +1,14 @@
+{
+  "name": "Spunbond CRM",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [3000, 8000, 5432],
+  "portsAttributes": {
+    "3000": { "label": "Frontend (Next.js)" },
+    "8000": { "label": "Backend (FastAPI)" },
+    "5432": { "label": "Postgres" }
+  },
+  "postCreateCommand": "cd frontend && npm ci && echo '\\n✅ Зависимости установлены. Запусти весь стек одной командой:  bash start.sh\\n'"
+}
