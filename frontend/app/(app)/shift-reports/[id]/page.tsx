@@ -23,6 +23,7 @@ import { apiErrorMessage } from "@/lib/api/http";
 import { ShiftReportStatus, UserRole } from "@/lib/types/enums";
 import type { OutputRead, ShiftMaterialRead } from "@/lib/types/shiftReport";
 import { formatDateTime, formatNumber } from "@/lib/utils/format";
+import { shiftMetrics } from "@/lib/utils/shiftMetrics";
 import { SHIFT_TYPE_LABELS } from "@/lib/utils/shiftLabels";
 import { shiftReportStatusStyles } from "@/lib/utils/statusStyles";
 import { FINISHED_WAREHOUSE_TYPES, RAW_WAREHOUSE_TYPES, pickWarehouseId } from "@/lib/utils/warehouseResolution";
@@ -88,6 +89,7 @@ export default function ShiftReportDetailPage() {
 
   const isOwner = report.master_id === userId;
   const canEdit = EDITABLE.has(report.status) && (isAdmin || isOwner);
+  const m = shiftMetrics(report);
 
   function handleEditSubmit(values: ShiftReportFormValues) {
     setActionError(null);
@@ -221,6 +223,42 @@ export default function ShiftReportDetailPage() {
           </Button>
         )}
       </div>
+
+      {!editing && (
+        <Card title="Производство смены">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <div className="text-xs font-semibold text-muted">Выпуск</div>
+              <div className="text-[19px] font-bold tabular-nums text-text">
+                {formatNumber(m.producedKg, 1)} кг
+              </div>
+              <div className="text-[11px] text-muted">
+                {formatNumber(m.producedUnits, 0)} ед.
+                {m.defectKg > 0 && ` · брак ${formatNumber(m.defectKg, 1)} кг`}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-muted">Чистый продукт</div>
+              <div className="text-[19px] font-bold tabular-nums text-success">
+                {formatNumber(m.netKg, 1)} кг
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-muted">Сырьё израсходовано</div>
+              <div className="text-[19px] font-bold tabular-nums text-text">
+                {formatNumber(m.rawKg, 1)} кг
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-muted">Выход</div>
+              <div className="text-[19px] font-bold tabular-nums text-primary">
+                {m.yieldPct !== null ? `${m.yieldPct.toFixed(1)}%` : "—"}
+              </div>
+              <div className="text-[11px] text-muted">чистый продукт ÷ сырьё</div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {editing ? (
         <Card title="Редактирование отчёта">

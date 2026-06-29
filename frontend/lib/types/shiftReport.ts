@@ -65,6 +65,8 @@ interface ProductBrief {
   unit: string;
   category?: string | null;
   subcategory?: string | null;
+  /** Вес единицы (кг) — для расчёта выпуска смены в кг и выхода (% сырья → продукт). */
+  base_weight?: string | null;
 }
 
 interface MaterialBrief {

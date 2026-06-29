@@ -26,6 +26,7 @@ import type { ShiftReportListItem } from "@/lib/types/shiftReport";
 import { formatDate, formatNumber } from "@/lib/utils/format";
 import { SHIFT_SHORT_LABELS } from "@/lib/utils/shiftLabels";
 import { shiftReportStatusStyles } from "@/lib/utils/statusStyles";
+import { shiftMetrics } from "@/lib/utils/shiftMetrics";
 import { CATEGORY_COLOR, CATEGORY_ORDER, CATEGORY_SHORT } from "@/lib/utils/shiftRawRules";
 
 const PAGE_SIZE = 50;
@@ -176,10 +177,16 @@ export default function ShiftReportsPage() {
   const hasFilter = !!(dateFrom || dateTo || shiftType || status || cat !== "all");
 
   const kpis = useMemo(() => {
-    const outputs = displayed.reduce((s, r) => s + r.outputs.length, 0);
+    let producedKg = 0;
+    let rawKg = 0;
+    for (const r of displayed) {
+      const m = shiftMetrics(r);
+      producedKg += m.producedKg;
+      rawKg += m.rawKg;
+    }
     const downtime = displayed.reduce((s, r) => s + (Number(r.downtime_hours) || 0), 0);
     const submitted = displayed.filter((r) => r.status === ShiftReportStatus.SUBMITTED).length;
-    return { shifts: displayed.length, outputs, downtime, submitted };
+    return { producedKg, rawKg, downtime, submitted };
   }, [displayed]);
 
   const downtimeLabel = `${formatNumber(kpis.downtime, Number.isInteger(kpis.downtime) ? 0 : 1)} ч`;
@@ -307,15 +314,15 @@ export default function ShiftReportsPage() {
 
       {/* ===== KPI STRIP ===== */}
       <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
-        <KpiCard label="Смен показано" value={formatNumber(kpis.shifts)} tone="primary" icon={Layers} />
-        <KpiCard label="Позиций выпуска" value={formatNumber(kpis.outputs)} tone="success" icon={PackageCheck} />
+        <KpiCard label="Сырьё ушло" value={`${formatNumber(kpis.rawKg, 0)} кг`} tone="primary" icon={Layers} />
+        <KpiCard label="Выпуск" value={`${formatNumber(kpis.producedKg, 0)} кг`} tone="success" icon={PackageCheck} />
         <KpiCard label="Общий простой" value={downtimeLabel} tone="danger" icon={TimerOff} />
         <KpiCard label="На утверждении" value={formatNumber(kpis.submitted)} tone="warning" icon={Clock} />
       </div>
 
       {/* ===== REPORTS TABLE ===== */}
       <div className="glass flex flex-col rounded-3xl p-5">
-        <div className="flex items-center gap-3 pb-4">
+        <div className="flex flex-wrap items-center gap-3 pb-4">
           <h3 className="text-[16px] font-bold tracking-tight text-text">Отчёты по сменам</h3>
           <span className="rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
             {displayed.length}

@@ -32,7 +32,7 @@ import {
   useStockReport,
 } from "@/lib/hooks/useReports";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
-import { ItemType, PaymentMethod, RevenueMode, ShiftType, UserRole } from "@/lib/types/enums";
+import { ItemType, PaymentMethod, RevenueMode, ShiftReportStatus, ShiftType, UserRole } from "@/lib/types/enums";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -40,6 +40,7 @@ import {
   formatDayMonth,
   formatNumber,
 } from "@/lib/utils/format";
+import { shiftMetrics } from "@/lib/utils/shiftMetrics";
 
 const PALETTE = ["#5b8def", "#8d6bff", "#3fc6c6", "#f0a23c", "#e87aa6", "#94a3b8"];
 const col = (i: number) => PALETTE[i % PALETTE.length] ?? PALETTE[0]!;
@@ -709,17 +710,33 @@ function ClientsReport({ periodLabel }: { periodLabel: string }) {
 }
 
 function ProductionReport({ filters, periodLabel }: { filters: FilterState; periodLabel: string }) {
-  const { data, isLoading } = useProductionReport({ date_from: filters.from || undefined, date_to: filters.to || undefined });
-  if (isLoading) return <Loading />;
+  const params = { date_from: filters.from || undefined, date_to: filters.to || undefined };
+  const { data, isLoading } = useProductionReport(params);
+  const shifts = useShiftReportsList({ ...params, size: 100 }, false);
+  if (isLoading || shifts.isLoading) return <Loading />;
   const rows = data ?? [];
   const totalQty = rows.reduce((s, r) => s + Number(r.total_quantity), 0);
-  const totalDefect = rows.reduce((s, r) => s + Number(r.total_defect), 0);
+
+  // Вес выпуска/сырья за период — по утверждённым сменам (там есть base_weight и расход сырья).
+  const agg = (shifts.data?.items ?? [])
+    .filter((r) => r.status === ShiftReportStatus.APPROVED)
+    .reduce(
+      (a, r) => {
+        const m = shiftMetrics(r);
+        a.producedKg += m.producedKg;
+        a.defectKg += m.defectKg;
+        a.rawKg += m.rawKg;
+        return a;
+      },
+      { producedKg: 0, defectKg: 0, rawKg: 0 }
+    );
+  const defectShare = agg.producedKg > 0 ? (agg.defectKg / agg.producedKg) * 100 : 0;
 
   const kpis: Kpi[] = [
-    { label: "Позиций", value: String(rows.length), icon: Boxes, iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.14)" },
-    { label: "Выпущено", value: fmtNum(totalQty), icon: Package, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
-    { label: "Брак", value: fmtNum(totalDefect), valueColor: totalDefect > 0 ? "#c47d1f" : "#1c1c22", icon: AlertTriangle, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
-    { label: "Доля брака", value: totalQty > 0 ? `${((totalDefect / totalQty) * 100).toFixed(1)}%` : "—", icon: TrendingUp, iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.14)" },
+    { label: "Сырьё ушло", value: `${fmtNum(agg.rawKg)} кг`, icon: Boxes, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
+    { label: "Выпуск", value: `${fmtNum(agg.producedKg)} кг`, icon: Package, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
+    { label: "Брак", value: `${fmtNum(agg.defectKg)} кг`, valueColor: agg.defectKg > 0 ? "#c47d1f" : "#1c1c22", icon: AlertTriangle, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
+    { label: "Доля брака", value: `${defectShare.toFixed(1)}%`, icon: TrendingUp, iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.14)" },
   ];
 
   const byQty = [...rows].sort((a, b) => Number(b.total_quantity) - Number(a.total_quantity));
@@ -1027,58 +1044,86 @@ function ShiftsReport({ filters, periodLabel }: { filters: FilterState; periodLa
   );
   if (isLoading) return <Loading />;
   const reports = data?.items ?? [];
-  const outQty = (r: (typeof reports)[number]) => r.outputs.reduce((s, o) => s + Number(o.quantity), 0);
-  const defQty = (r: (typeof reports)[number]) => r.outputs.reduce((s, o) => s + Number(o.defect_quantity), 0);
-  const totalOut = reports.reduce((s, r) => s + outQty(r), 0);
-  const totalDef = reports.reduce((s, r) => s + defQty(r), 0);
-  const masters = new Set(reports.map((r) => r.master?.full_name ?? r.master_id));
+
+  // Агрегат за период: выпуск/сырьё в кг и общий выход (% сырья → чистый продукт).
+  const agg = reports.reduce(
+    (a, r) => {
+      const m = shiftMetrics(r);
+      a.producedKg += m.producedKg;
+      a.netKg += m.netKg;
+      a.rawKg += m.rawKg;
+      a.defectKg += m.defectKg;
+      return a;
+    },
+    { producedKg: 0, netKg: 0, rawKg: 0, defectKg: 0 }
+  );
+  const yieldPct = agg.rawKg > 0 ? (agg.netKg / agg.rawKg) * 100 : null;
 
   const kpis: Kpi[] = [
-    { label: "Смен", value: String(reports.length), icon: Layers, iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.14)" },
-    { label: "Мастеров", value: String(masters.size), icon: Users, iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.14)" },
-    { label: "Выпущено", value: fmtNum(totalOut), icon: Package, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
-    { label: "Брак", value: fmtNum(totalDef), valueColor: totalDef > 0 ? "#c47d1f" : "#1c1c22", icon: AlertTriangle, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
+    { label: "Сырьё ушло", value: `${fmtNum(agg.rawKg)} кг`, icon: Boxes, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
+    { label: "Выпуск", value: `${fmtNum(agg.producedKg)} кг`, icon: Package, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
+    { label: "Выход", value: yieldPct !== null ? `${yieldPct.toFixed(1)}%` : "—", valueColor: "#6d52cc", icon: TrendingUp, iconColor: "#8b5cf6", iconBg: "rgba(139,92,246,0.14)" },
+    { label: "Брак", value: `${fmtNum(agg.defectKg)} кг`, valueColor: agg.defectKg > 0 ? "#c47d1f" : "#1c1c22", icon: AlertTriangle, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
   ];
 
   const recent = [...reports].sort((a, b) => a.shift_date.localeCompare(b.shift_date)).slice(-6);
-  const bars: Bar[] = recent.map((r) => ({
-    label: formatDayMonth(r.shift_date).split(" ").slice(0, 2).join(" "),
-    value: outQty(r),
-    valueLabel: fmtNum(outQty(r)),
-  }));
+  const bars: Bar[] = recent.map((r) => {
+    const kg = shiftMetrics(r).producedKg;
+    return {
+      label: formatDayMonth(r.shift_date).split(" ").slice(0, 2).join(" "),
+      value: kg,
+      valueLabel: `${fmtNum(kg)} кг`,
+    };
+  });
 
   const byMaster = new Map<string, number>();
   for (const r of reports) {
     const name = r.master?.full_name ?? "—";
-    byMaster.set(name, (byMaster.get(name) ?? 0) + outQty(r));
+    byMaster.set(name, (byMaster.get(name) ?? 0) + shiftMetrics(r).producedKg);
   }
   const segments = topWithRest([...byMaster.entries()].map(([name, value]) => ({ name, value })), 5);
 
-  const grid = "120px minmax(0,1fr) 110px 130px 120px";
+  const grid = "104px minmax(0,1fr) 84px 116px 116px 84px";
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <KpiStrip items={kpis} />
       <ChartsRow>
-        <BarCard title="Выпуск по сменам" periodLabel={periodLabel} bars={bars} />
-        <DonutCard title="Распределение по мастерам" center={fmtNum(totalOut)} centerLabel="выпуск" segments={segments} />
+        <BarCard title="Выпуск по сменам, кг" periodLabel={periodLabel} bars={bars} />
+        <DonutCard title="Выпуск по мастерам" center={fmtNum(agg.producedKg)} centerLabel="кг выпуск" segments={segments} />
       </ChartsRow>
       <TableCard
         title="Сменные отчёты"
         grid={grid}
-        headers={[{ text: "Дата" }, { text: "Мастер" }, { text: "Смена", align: "center" }, { text: "Выпуск", align: "right" }, { text: "Брак", align: "right" }]}
+        headers={[
+          { text: "Дата" },
+          { text: "Мастер" },
+          { text: "Смена", align: "center" },
+          { text: "Выпуск", align: "right" },
+          { text: "Сырьё", align: "right" },
+          { text: "Выход", align: "right" },
+        ]}
         empty="Нет смен за период"
         rows={[...reports]
           .sort((a, b) => b.shift_date.localeCompare(a.shift_date))
-          .map((r) => ({
-            key: r.id,
-            cells: [
-              { node: formatDate(r.shift_date), className: "font-semibold" },
-              { node: r.master?.full_name ?? "—", className: "text-muted" },
-              { node: SHIFT_TYPE_LABEL[r.shift_type], align: "center", className: "text-muted" },
-              { node: fmtNum(outQty(r)), align: "right", className: "font-bold tabular-nums" },
-              { node: fmtNum(defQty(r)), align: "right", className: "tabular-nums", style: { color: defQty(r) > 0 ? "#c47d1f" : "rgba(40,40,60,0.35)" } },
-            ],
-          }))}
+          .map((r) => {
+            const m = shiftMetrics(r);
+            return {
+              key: r.id,
+              cells: [
+                { node: formatDate(r.shift_date), className: "font-semibold" },
+                { node: r.master?.full_name ?? "—", className: "text-muted" },
+                { node: SHIFT_TYPE_LABEL[r.shift_type], align: "center", className: "text-muted" },
+                { node: `${formatNumber(m.producedKg, 1)} кг`, align: "right", className: "font-bold tabular-nums" },
+                { node: `${formatNumber(m.rawKg, 1)} кг`, align: "right", className: "tabular-nums text-text/70" },
+                {
+                  node: m.yieldPct !== null ? `${m.yieldPct.toFixed(1)}%` : "—",
+                  align: "right",
+                  className: "font-bold tabular-nums",
+                  style: { color: "#6d52cc" },
+                },
+              ],
+            };
+          })}
       />
     </div>
   );

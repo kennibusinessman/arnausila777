@@ -100,6 +100,9 @@ class _ProductBrief(BaseModel):
     unit: str
     category: str | None = None
     subcategory: str | None = None
+    # Вес единицы (кг за шт/рулон) — нужен, чтобы считать выпуск смены в кг и
+    # выход (% сырья → продукт). Берётся из карточки товара.
+    base_weight: Decimal | None = None
 
 
 class _MaterialBrief(BaseModel):
