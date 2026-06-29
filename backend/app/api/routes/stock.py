@@ -5,11 +5,12 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import or_, select
 
 from app.api.deps import DbSession, Pagination
 from app.core.enums import ItemType, MovementType, SourceType, UserRole
 from app.core.permissions import require_roles
-from app.models import StockBalance, StockMovement, User
+from app.models import Material, Product, StockBalance, StockMovement, User
 from app.repositories.base import CRUDRepository
 from app.schemas.common import Message, Page
 from app.schemas.stock import (
@@ -43,6 +44,12 @@ async def list_balances(
     product_id: Annotated[uuid.UUID | None, Query()] = None,
     material_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Page[StockBalanceRead]:
+    # Не показываем остатки удалённых (soft-delete) товаров/материалов: строка в
+    # stock_balances остаётся как кэш, но в списке остатков её быть не должно.
+    alive_item = or_(
+        StockBalance.product_id.in_(select(Product.id).where(Product.deleted_at.is_(None))),
+        StockBalance.material_id.in_(select(Material.id).where(Material.deleted_at.is_(None))),
+    )
     items, total = await balances_repo.list(
         db,
         offset=params.offset,
@@ -54,6 +61,7 @@ async def list_balances(
             "material_id": material_id,
         },
         order_by=StockBalance.updated_at.desc(),
+        extra=(alive_item,),
     )
     return Page[StockBalanceRead](
         items=[StockBalanceRead.model_validate(i) for i in items],
