@@ -35,9 +35,20 @@ export function Combobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const wasCreatingRef = useRef(false);
 
   const selected = options.find((o) => o.value === value) ?? null;
+
+  // Выбор/очистка: закрываем список и СНИМАЕМ фокус с инпута. Иначе на мобильных
+  // клавиатура остаётся открытой, а инпут «залипает» в фокусе — повторный тап не
+  // открывает список (приходится тапнуть мимо и обратно).
+  function commit(next: string | null) {
+    onChange(next);
+    setOpen(false);
+    setQuery("");
+    inputRef.current?.blur();
+  }
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -55,6 +66,7 @@ export function Combobox({
     if (wasCreatingRef.current && !creating) {
       setOpen(false);
       setQuery("");
+      inputRef.current?.blur();
     }
     wasCreatingRef.current = !!creating;
   }, [creating]);
@@ -69,6 +81,7 @@ export function Combobox({
   return (
     <div ref={containerRef} className="relative">
       <input
+        ref={inputRef}
         type="text"
         disabled={disabled}
         value={open ? query : selected?.label ?? ""}
@@ -87,8 +100,7 @@ export function Combobox({
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
-                onChange(null);
-                setOpen(false);
+                commit(null);
               }}
               className="block w-full px-3 py-2 text-left text-sm text-muted hover:bg-black/[0.04]"
             >
@@ -104,9 +116,7 @@ export function Combobox({
                 key={opt.value}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onChange(opt.value);
-                  setOpen(false);
-                  setQuery("");
+                  commit(opt.value);
                 }}
                 className={clsx(
                   "block w-full px-3 py-2 text-left text-sm hover:bg-black/[0.04]",

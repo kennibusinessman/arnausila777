@@ -321,7 +321,7 @@ export default function PaymentsPage() {
 
       {/* ===== TABLE CARD ===== */}
       <div className="glass flex min-h-0 flex-1 flex-col rounded-3xl p-5">
-        <div className="flex items-center gap-3 pb-4">
+        <div className="flex flex-wrap items-center gap-3 pb-4">
           <h3 className="text-[16px] font-bold tracking-tight text-text">Поступления от клиентов</h3>
           <span className="rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
             {total} {total === 1 ? "платёж" : "платежей"}
@@ -330,7 +330,7 @@ export default function PaymentsPage() {
           <button
             disabled
             title="Скоро"
-            className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3.5 py-2 text-[12.5px] font-medium text-muted opacity-60"
+            className="hidden items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3.5 py-2 text-[12.5px] font-medium text-muted opacity-60 sm:flex"
           >
             <Download className="h-[15px] w-[15px]" strokeWidth={1.9} />
             Экспорт

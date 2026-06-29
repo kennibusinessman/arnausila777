@@ -483,7 +483,7 @@ export default function StockPage() {
 
           {/* ===== STOCK TABLE ===== */}
           <div className="glass flex flex-col rounded-3xl p-5">
-            <div className="flex items-center gap-3 pb-4">
+            <div className="flex flex-wrap items-center gap-3 pb-4">
               <h3 className="text-[16px] font-bold tracking-tight text-text">Складские остатки</h3>
               <span className="rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
                 {sortedBalances.length}

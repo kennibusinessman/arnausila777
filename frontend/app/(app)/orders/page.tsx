@@ -85,10 +85,7 @@ function OrderCard({
         {initialsOf(name)}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 font-semibold text-primary">{order.order_number}</span>
-          <span className="truncate text-[13.5px] font-medium text-text">{name}</span>
-        </div>
+        <span className="truncate text-[14px] font-semibold text-text">{name}</span>
         <span className="truncate text-xs text-muted">{itemsLabel(order)}</span>
         <span className="text-xs text-muted">
           {formatDate(order.created_at)} · {formatWeight(order.total_weight)} · {order.items.length} поз.
@@ -451,7 +448,7 @@ export default function OrdersPage() {
       </div>
 
       <div className="glass rounded-3xl p-5 shadow-xl shadow-black/5">
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <h3 className="text-[15px] font-semibold text-text">Заказы</h3>
           <span className="rounded-full border border-white/40 bg-white/40 px-2.5 py-1 text-[11.5px] font-medium text-muted">
             {total} заказ{total === 1 ? "" : "ов"}

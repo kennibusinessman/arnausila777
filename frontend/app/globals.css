@@ -101,6 +101,17 @@ body {
   box-shadow: 0 40px 100px rgba(30, 40, 80, 0.28);
 }
 
+/* iOS Safari зумит страницу при фокусе на поле со шрифтом < 16px. На тач-устройствах
+   держим у полей ввода 16px — это убирает авто-зум и связанный с ним «прыжок» каретки
+   на инпутах количества/цены. На десктопе (pointer: fine) правило не применяется. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
