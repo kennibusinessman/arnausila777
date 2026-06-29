@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/Button";
 import { Combobox } from "@/components/ui/Combobox";
 import { Modal } from "@/components/ui/Modal";
 import { OrderItemsEditor } from "@/components/orders/OrderItemsEditor";
+import { useAuthStore } from "@/lib/auth/store";
 import { useClientOptions } from "@/lib/hooks/useClients";
 import { useCreateOrder } from "@/lib/hooks/useOrders";
 import { useProductOptions } from "@/lib/hooks/useProducts";
 import { apiErrorMessage } from "@/lib/api/http";
+import { UserRole } from "@/lib/types/enums";
 import type { OrderItemCreate } from "@/lib/types/order";
 
 interface CreateOrderModalProps {
@@ -32,6 +34,9 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
   const [items, setItems] = useState<OrderItemCreate[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const role = useAuthStore((s) => s.user?.role);
+  const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
 
   const clients = useClientOptions();
   const products = useProductOptions();
@@ -127,6 +132,7 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
             onChange={setItems}
             products={products.data ?? []}
             disabled={createOrder.isPending}
+            hidePrice={hideMoney}
           />
         </div>
 

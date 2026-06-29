@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -20,6 +21,7 @@ from app.schemas.common import Message, Page
 from app.schemas.order import (
     OrderCreate,
     OrderListItem,
+    OrderPricing,
     OrderRead,
     OrderSummary,
     OrderUpdate,
@@ -28,16 +30,42 @@ from app.services import order_service
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-Manager = Annotated[
+# Заказы заводят SA, B, менеджер по продажам и зав. складом. Зав. складом «забивает»
+# заказ без цен (доценит менеджер) и денег не видит — см. _hide_money ниже.
+Creator = Annotated[
+    User,
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.SALES_MANAGER,
+            UserRole.WAREHOUSE_MANAGER,
+        )
+    ),
+]
+# Доценка (проставить цены) — только менеджер по продажам и руководство, не зав. склад.
+Pricer = Annotated[
     User,
     Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
 ]
 Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 
 
+def _hide_money(actor: User, *orders: OrderListItem | OrderRead) -> None:
+    """Зав. складом денег не видит — обнуляем суммы/цены в ответе (защита на уровне
+    API, не только UI). Вес и количества остаются как есть."""
+    if actor.role is not UserRole.WAREHOUSE_MANAGER:
+        return
+    for order in orders:
+        order.total_amount = Decimal("0")
+        for item in order.items:
+            item.unit_price = Decimal("0")
+            item.total_price = Decimal("0")
+
+
 @router.get("", response_model=Page[OrderListItem])
 async def list_orders(
-    actor: Manager,
+    actor: Creator,
     db: DbSession,
     params: Pagination,
     client_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -62,8 +90,10 @@ async def list_orders(
         search=search,
         sort=sort,
     )
+    rows = [OrderListItem.model_validate(i) for i in items]
+    _hide_money(actor, *rows)
     return Page[OrderListItem](
-        items=[OrderListItem.model_validate(i) for i in items],
+        items=rows,
         total=total,
         page=params.page,
         size=params.size,
@@ -72,7 +102,7 @@ async def list_orders(
 
 @router.get("/summary", response_model=OrderSummary)
 async def get_orders_summary(
-    actor: Manager,
+    actor: Creator,
     db: DbSession,
     client_id: Annotated[uuid.UUID | None, Query()] = None,
     manager_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -82,7 +112,7 @@ async def get_orders_summary(
     deadline_to: Annotated[date | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
 ) -> OrderSummary:
-    return await order_service.get_summary(
+    summary = await order_service.get_summary(
         db,
         actor,
         client_id=client_id,
@@ -93,25 +123,44 @@ async def get_orders_summary(
         deadline_to=deadline_to,
         search=search,
     )
+    if actor.role is UserRole.WAREHOUSE_MANAGER:
+        summary.total_amount = Decimal("0")  # зав. складом денег не видит
+    return summary
 
 
 @router.post("", response_model=OrderRead, status_code=201)
-async def create_order(data: OrderCreate, actor: Manager, db: DbSession) -> OrderRead:
+async def create_order(data: OrderCreate, actor: Creator, db: DbSession) -> OrderRead:
     order = await order_service.create_order(db, actor, data)
-    return OrderRead.model_validate(order)
+    result = OrderRead.model_validate(order)
+    _hide_money(actor, result)
+    return result
 
 
 @router.get("/{order_id}", response_model=OrderRead)
-async def get_order(order_id: uuid.UUID, actor: Manager, db: DbSession) -> OrderRead:
+async def get_order(order_id: uuid.UUID, actor: Creator, db: DbSession) -> OrderRead:
     order = await order_service.get_full(db, actor, order_id)
-    return OrderRead.model_validate(order)
+    result = OrderRead.model_validate(order)
+    _hide_money(actor, result)
+    return result
 
 
 @router.patch("/{order_id}", response_model=OrderRead)
 async def update_order(
-    order_id: uuid.UUID, data: OrderUpdate, actor: Manager, db: DbSession
+    order_id: uuid.UUID, data: OrderUpdate, actor: Creator, db: DbSession
 ) -> OrderRead:
     order = await order_service.update_order(db, actor, order_id, data)
+    result = OrderRead.model_validate(order)
+    _hide_money(actor, result)
+    return result
+
+
+@router.patch("/{order_id}/pricing", response_model=OrderRead)
+async def set_order_pricing(
+    order_id: uuid.UUID, data: OrderPricing, actor: Pricer, db: DbSession
+) -> OrderRead:
+    """Доценка заказа: менеджер/руководитель проставляют цены позиций (зав. склад
+    создаёт заказ без цен). Зав. складом сюда не допускается."""
+    order = await order_service.price_order(db, actor, order_id, data)
     return OrderRead.model_validate(order)
 
 

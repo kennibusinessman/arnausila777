@@ -34,6 +34,19 @@ Manager = Annotated[
     User,
     Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
 ]
+# Зав. складом тоже читает справочник клиентов — нужен для выбора клиента при
+# «забивании» заказа. Создавать/править/смотреть статистику (там долги) — нельзя.
+Reader = Annotated[
+    User,
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.SALES_MANAGER,
+            UserRole.WAREHOUSE_MANAGER,
+        )
+    ),
+]
 Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 
 
@@ -50,7 +63,7 @@ async def _get_in_scope(db: DbSession, actor: User, client_id: uuid.UUID) -> Cli
 
 @router.get("", response_model=Page[ClientRead])
 async def list_clients(
-    actor: Manager,
+    actor: Reader,
     db: DbSession,
     params: Pagination,
     search: Annotated[str | None, Query()] = None,

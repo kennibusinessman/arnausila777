@@ -3,6 +3,7 @@ import type { Message, Page, PageParams } from "@/lib/types/common";
 import type {
   OrderCreate,
   OrderListItem,
+  OrderPricing,
   OrderRead,
   OrderSummary,
   OrderUpdate,
@@ -34,5 +35,8 @@ export const getOrder = (orderId: string) => http.get<OrderRead>(`/orders/${orde
 
 export const updateOrder = (orderId: string, data: OrderUpdate) =>
   http.patch<OrderRead>(`/orders/${orderId}`, data);
+
+export const setOrderPricing = (orderId: string, data: OrderPricing) =>
+  http.patch<OrderRead>(`/orders/${orderId}/pricing`, data);
 
 export const deleteOrder = (orderId: string) => http.delete<Message>(`/orders/${orderId}`);

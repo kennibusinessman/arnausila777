@@ -22,6 +22,16 @@ export interface OrderUpdate {
   manager_id?: string | null;
 }
 
+export interface OrderItemPrice {
+  id: string;
+  unit_price: string;
+}
+
+/** Доценка заказа: проставить цены позиций заказа, созданного зав. складом без цен. */
+export interface OrderPricing {
+  items: OrderItemPrice[];
+}
+
 interface ProductBrief {
   id: string;
   name: string;

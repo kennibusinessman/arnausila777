@@ -5,11 +5,12 @@ import {
   getOrder,
   getOrdersSummary,
   listOrders,
+  setOrderPricing,
   updateOrder,
   type ListOrdersParams,
   type OrderFilterParams,
 } from "@/lib/api/orders";
-import type { OrderCreate, OrderUpdate } from "@/lib/types/order";
+import type { OrderCreate, OrderPricing, OrderUpdate } from "@/lib/types/order";
 
 /** Создание заказа сразу списывает остаток и наращивает долг — обновляем и склад, и отгрузки. */
 function invalidateOrderEffects(qc: ReturnType<typeof useQueryClient>) {
@@ -67,6 +68,20 @@ export function useUpdateOrder(orderId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["order", orderId] });
+    },
+  });
+}
+
+/** Доценка заказа (менеджер/руководитель). Меняет суммы заказа и отгрузки — обновляем выручку/отгрузки. */
+export function usePriceOrder(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: OrderPricing) => setOrderPricing(orderId, data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders-summary"] });
+      qc.invalidateQueries({ queryKey: ["shipments"] });
     },
   });
 }

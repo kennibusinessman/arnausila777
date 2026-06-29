@@ -40,6 +40,19 @@ class OrderUpdate(BaseModel):
     manager_id: uuid.UUID | None = None
 
 
+class OrderItemPrice(BaseModel):
+    id: uuid.UUID
+    unit_price: Decimal = Field(ge=0)
+
+
+class OrderPricing(BaseModel):
+    """Доценка заказа: зав. склад создаёт заказ без цен (всё по 0), а менеджер/
+    руководитель потом проставляют цены позиций. Пересчитывает сумму заказа и
+    связанной отгрузки (выручка считается по отгрузкам)."""
+
+    items: list[OrderItemPrice] = Field(min_length=1)
+
+
 # --- Вложенные краткие представления для ответа ---
 
 class _ProductBrief(BaseModel):

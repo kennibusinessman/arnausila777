@@ -20,7 +20,9 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { CreateOrderModal } from "@/components/orders/CreateOrderModal";
+import { useAuthStore } from "@/lib/auth/store";
 import { useOrdersList, useOrdersSummary } from "@/lib/hooks/useOrders";
+import { UserRole } from "@/lib/types/enums";
 import type { OrderListItem } from "@/lib/types/order";
 import { apiErrorMessage } from "@/lib/api/http";
 import { formatCurrency, formatDate, formatNumber, formatWeight } from "@/lib/utils/format";
@@ -60,7 +62,15 @@ function itemsLabel(order: OrderListItem) {
 }
 
 /** Карточка заказа для мобильной раскладки (вместо строки таблицы). Тап — открывает поп-ап. */
-function OrderCard({ order, onOpen }: { order: OrderListItem; onOpen: () => void }) {
+function OrderCard({
+  order,
+  onOpen,
+  hideMoney,
+}: {
+  order: OrderListItem;
+  onOpen: () => void;
+  hideMoney?: boolean;
+}) {
   const name = order.client?.name ?? "—";
   return (
     <button
@@ -85,7 +95,9 @@ function OrderCard({ order, onOpen }: { order: OrderListItem; onOpen: () => void
         </span>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="font-bold tabular-nums text-text">{formatCurrency(order.total_amount)}</span>
+        {!hideMoney && (
+          <span className="font-bold tabular-nums text-text">{formatCurrency(order.total_amount)}</span>
+        )}
         <ChevronRight className="h-4 w-4 text-muted" strokeWidth={2} />
       </div>
     </button>
@@ -103,7 +115,15 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /** Поп-ап с полной информацией по заказу. Данные берём прямо из строки списка (там уже всё есть). */
-function OrderDetailModal({ order, onClose }: { order: OrderListItem | null; onClose: () => void }) {
+function OrderDetailModal({
+  order,
+  onClose,
+  hideMoney,
+}: {
+  order: OrderListItem | null;
+  onClose: () => void;
+  hideMoney?: boolean;
+}) {
   if (!order) return null;
   const name = order.client?.name ?? "—";
   return (
@@ -143,13 +163,15 @@ function OrderDetailModal({ order, onClose }: { order: OrderListItem | null; onC
                 <div key={it.id} className="rounded-2xl border border-white/60 bg-white/50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <span className="font-medium text-text">{it.product?.name ?? "—"}</span>
-                    <span className="shrink-0 font-semibold tabular-nums text-text">
-                      {formatCurrency(it.total_price)}
-                    </span>
+                    {!hideMoney && (
+                      <span className="shrink-0 font-semibold tabular-nums text-text">
+                        {formatCurrency(it.total_price)}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 text-xs text-muted">
-                    {formatNumber(Number(it.quantity), 0)} {it.product?.unit ?? ""} ×{" "}
-                    {formatCurrency(it.unit_price)}
+                    {formatNumber(Number(it.quantity), 0)} {it.product?.unit ?? ""}
+                    {!hideMoney && <> × {formatCurrency(it.unit_price)}</>}
                   </div>
                   {it.comment && <div className="mt-1 text-xs text-muted">{it.comment}</div>}
                 </div>
@@ -158,12 +180,14 @@ function OrderDetailModal({ order, onClose }: { order: OrderListItem | null; onC
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-2xl bg-primary-50 px-4 py-3">
-          <span className="text-[13px] font-semibold text-muted">Итого</span>
-          <span className="text-[19px] font-bold tabular-nums text-text">
-            {formatCurrency(order.total_amount)}
-          </span>
-        </div>
+        {!hideMoney && (
+          <div className="flex items-center justify-between rounded-2xl bg-primary-50 px-4 py-3">
+            <span className="text-[13px] font-semibold text-muted">Итого</span>
+            <span className="text-[19px] font-bold tabular-nums text-text">
+              {formatCurrency(order.total_amount)}
+            </span>
+          </div>
+        )}
 
         <Link
           href={`/orders/${order.id}`}
@@ -179,6 +203,8 @@ function OrderDetailModal({ order, onClose }: { order: OrderListItem | null; onC
 
 export default function OrdersPage() {
   const router = useRouter();
+  const role = useAuthStore((s) => s.user?.role);
+  const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -271,7 +297,15 @@ export default function OrdersPage() {
       },
     },
     { header: "Вес", cell: (row) => formatWeight(row.total_weight) },
-    { header: "Сумма", align: "right", cell: (row) => formatCurrency(row.total_amount) },
+    ...(hideMoney
+      ? []
+      : [
+          {
+            header: "Сумма",
+            align: "right" as const,
+            cell: (row: OrderListItem) => formatCurrency(row.total_amount),
+          },
+        ]),
     {
       header: "",
       align: "right",
@@ -398,18 +432,22 @@ export default function OrdersPage() {
           tone="warning"
           icon={Weight}
         />
-        <KpiCard
-          label="Средний чек"
-          value={summary.data ? formatCurrency(avgOrderValue) : "—"}
-          tone="success"
-          icon={TrendingUp}
-        />
-        <KpiCard
-          label="Сумма за период"
-          value={summary.data ? formatCurrency(summary.data.total_amount) : "—"}
-          tone="primary"
-          icon={Wallet}
-        />
+        {!hideMoney && (
+          <>
+            <KpiCard
+              label="Средний чек"
+              value={summary.data ? formatCurrency(avgOrderValue) : "—"}
+              tone="success"
+              icon={TrendingUp}
+            />
+            <KpiCard
+              label="Сумма за период"
+              value={summary.data ? formatCurrency(summary.data.total_amount) : "—"}
+              tone="primary"
+              icon={Wallet}
+            />
+          </>
+        )}
       </div>
 
       <div className="glass rounded-3xl p-5 shadow-xl shadow-black/5">
@@ -446,7 +484,7 @@ export default function OrdersPage() {
               ) : (
                 <div className="flex flex-col gap-2.5">
                   {rows.map((row) => (
-                    <OrderCard key={row.id} order={row} onOpen={() => setSelected(row)} />
+                    <OrderCard key={row.id} order={row} onOpen={() => setSelected(row)} hideMoney={hideMoney} />
                   ))}
                 </div>
               )}
@@ -464,7 +502,7 @@ export default function OrdersPage() {
         onCreated={(orderId) => router.push(`/orders/${orderId}`)}
       />
 
-      <OrderDetailModal order={selected} onClose={() => setSelected(null)} />
+      <OrderDetailModal order={selected} onClose={() => setSelected(null)} hideMoney={hideMoney} />
     </div>
   );
 }

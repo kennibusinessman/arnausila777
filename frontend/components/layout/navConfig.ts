@@ -32,7 +32,12 @@ const { SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER, SHIFT_MASTER, SALES_MANAGER } = Us
  */
 export const navItems: NavItem[] = [
   { href: "/dashboard", label: "Дашборд", icon: LayoutDashboard, roles: [SUPER_ADMIN, BOSS] },
-  { href: "/orders", label: "Заказы", icon: ShoppingCart, roles: [SUPER_ADMIN, BOSS, SALES_MANAGER] },
+  {
+    href: "/orders",
+    label: "Заказы",
+    icon: ShoppingCart,
+    roles: [SUPER_ADMIN, BOSS, SALES_MANAGER, WAREHOUSE_MANAGER],
+  },
   {
     href: "/shift-reports",
     label: "Сменные отчёты",

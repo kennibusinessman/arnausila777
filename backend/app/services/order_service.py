@@ -14,7 +14,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +22,13 @@ from app.core.enums import UserRole, WarehouseType
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models import Client, Order, OrderItem, Product, Shipment, ShipmentItem, User, Warehouse
 from app.schemas.common import PageParams
-from app.schemas.order import OrderCreate, OrderItemCreate, OrderSummary, OrderUpdate
+from app.schemas.order import (
+    OrderCreate,
+    OrderItemCreate,
+    OrderPricing,
+    OrderSummary,
+    OrderUpdate,
+)
 from app.services import audit_service, shipment_service
 
 
@@ -30,8 +36,16 @@ def _is_sales(actor: User) -> bool:
     return actor.role is UserRole.SALES_MANAGER
 
 
+def _is_warehouse(actor: User) -> bool:
+    return actor.role is UserRole.WAREHOUSE_MANAGER
+
+
 def _scope(actor: User) -> list[ColumnElement[bool]]:
-    return [Order.manager_id == actor.id] if _is_sales(actor) else []
+    # Менеджер по продажам видит свои заказы + «пул без цен» (созданные зав. складом,
+    # total_amount=0), чтобы их можно было доценить.
+    if not _is_sales(actor):
+        return []
+    return [or_(Order.manager_id == actor.id, Order.total_amount == 0)]
 
 
 async def _generate_order_number(session: AsyncSession) -> str:
@@ -77,9 +91,10 @@ async def _resolve_finished_warehouse(session: AsyncSession) -> Warehouse:
 
 
 async def _build_items(
-    session: AsyncSession, items_in: list[OrderItemCreate]
+    session: AsyncSession, items_in: list[OrderItemCreate], *, unpriced: bool = False
 ) -> tuple[list[OrderItem], Decimal, dict[uuid.UUID, Product]]:
-    """Создаёт позиции с расчётом цен; цена берётся из товара, если не задана."""
+    """Создаёт позиции с расчётом цен; цена берётся из товара, если не задана.
+    `unpriced=True` (заказ зав. склада) — все цены 0, доценит менеджер позже."""
     product_ids = {i.product_id for i in items_in}
     products = (
         await session.execute(select(Product).where(Product.id.in_(product_ids)))
@@ -94,7 +109,10 @@ async def _build_items(
             raise BadRequestError(f"Товар {line.product_id} не найден")
         if not product.is_active:
             raise BadRequestError(f"Товар «{product.name}» неактивен")
-        unit_price = line.unit_price if line.unit_price is not None else product.default_price
+        if unpriced:
+            unit_price = Decimal("0")
+        else:
+            unit_price = line.unit_price if line.unit_price is not None else product.default_price
         total_price = (unit_price * line.quantity).quantize(Decimal("0.01"))
         order_items.append(
             OrderItem(
@@ -259,10 +277,14 @@ async def create_order(session: AsyncSession, actor: User, data: OrderCreate) ->
 
     if _is_sales(actor):
         manager_id = actor.id
+    elif _is_warehouse(actor):
+        manager_id = None  # заказ без цен — менеджера назначит тот, кто доценит
     else:
         manager_id = data.manager_id or actor.id
 
-    items, total, products_by_id = await _build_items(session, data.items)
+    items, total, products_by_id = await _build_items(
+        session, data.items, unpriced=_is_warehouse(actor)
+    )
     order = Order(
         order_number=await _generate_order_number(session),
         client_id=data.client_id,
@@ -320,6 +342,53 @@ async def update_order(
         entity_type="Order",
         entity_id=order.id,
         new=payload or None,
+    )
+    await session.commit()
+    return await get_full(session, actor, order.id)
+
+
+async def price_order(
+    session: AsyncSession, actor: User, order_id: uuid.UUID, data: OrderPricing
+) -> Order:
+    """Доценка заказа: проставляет цены позиций (зав. склад создаёт заказ без цен).
+
+    Пересчитывает сумму заказа И связанной отгрузки — выручка считается по отгрузкам
+    (Σ shipments.total_amount), поэтому без зеркалирования цен в отгрузку выручка не
+    сойдётся. Остатки склада не трогаются — цена на количество не влияет."""
+    order = await get_full(session, actor, order_id)
+
+    by_id = {it.id: it for it in order.items}
+    price_by_product: dict[uuid.UUID, Decimal] = {}
+    for line in data.items:
+        item = by_id.get(line.id)
+        if item is None:
+            raise BadRequestError("Позиция не найдена в заказе")
+        item.unit_price = line.unit_price
+        item.total_price = (line.unit_price * item.quantity).quantize(Decimal("0.01"))
+        price_by_product[item.product_id] = line.unit_price
+
+    order.total_amount = sum((it.total_price for it in order.items), Decimal("0"))
+    if order.manager_id is None:
+        order.manager_id = actor.id  # заказ выходит из «пула без цен» к доценившему
+
+    # Зеркалим цены в отгрузку (выручка = Σ shipments.total_amount / ShipmentItem.total_price).
+    for shipment in order.shipments:
+        if shipment.deleted_at is not None:
+            continue
+        for sit in shipment.items:
+            new_price = price_by_product.get(sit.product_id)
+            if new_price is not None:
+                sit.unit_price = new_price
+                sit.total_price = (new_price * sit.quantity).quantize(Decimal("0.01"))
+        shipment.total_amount = order.total_amount
+
+    await audit_service.log(
+        session,
+        user_id=actor.id,
+        action="PRICE_ORDER",
+        entity_type="Order",
+        entity_id=order.id,
+        new={"total_amount": str(order.total_amount)},
     )
     await session.commit()
     return await get_full(session, actor, order.id)

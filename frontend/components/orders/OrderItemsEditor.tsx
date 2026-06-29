@@ -10,6 +10,8 @@ interface OrderItemsEditorProps {
   onChange: (items: OrderItemCreate[]) => void;
   products: ProductRead[];
   disabled?: boolean;
+  /** Зав. складом не видит деньги: скрываем поле цены и «Итого». Цены проставит менеджер. */
+  hidePrice?: boolean;
 }
 
 function findProduct(products: ProductRead[], id: string) {
@@ -20,7 +22,13 @@ function findProduct(products: ProductRead[], id: string) {
  * 1С-стиль: одно поле поиска товара по названию добавляет новую позицию ниже
  * (а не редактирует существующую). Базовый/общий вес считаются от Product.base_weight.
  */
-export function OrderItemsEditor({ items, onChange, products, disabled }: OrderItemsEditorProps) {
+export function OrderItemsEditor({
+  items,
+  onChange,
+  products,
+  disabled,
+  hidePrice,
+}: OrderItemsEditorProps) {
   const productOptions = products.map((p) => ({
     value: p.id,
     label: p.name,
@@ -40,7 +48,11 @@ export function OrderItemsEditor({ items, onChange, products, disabled }: OrderI
     const product = findProduct(products, productId);
     onChange([
       ...items,
-      { product_id: productId, quantity: "1", unit_price: product?.default_price ?? null },
+      {
+        product_id: productId,
+        quantity: "1",
+        unit_price: hidePrice ? null : product?.default_price ?? null,
+      },
     ]);
   }
 
@@ -89,7 +101,7 @@ export function OrderItemsEditor({ items, onChange, products, disabled }: OrderI
                     ×
                   </button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <div className={`mt-2 grid grid-cols-2 gap-2.5 ${hidePrice ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
                   <div>
                     <label className="mb-1 block text-[11px] font-semibold text-muted">
                       Количество{product ? `, ${product.unit}` : ""}
@@ -104,21 +116,23 @@ export function OrderItemsEditor({ items, onChange, products, disabled }: OrderI
                       className="w-full rounded-xl border-[1.5px] border-border bg-white/80 outline-none focus:border-primary/50 px-2.5 py-1.5 text-sm"
                     />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-semibold text-muted">
-                      Цена, ₸ за {product?.unit ?? "ед."}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder={product?.default_price ?? "0"}
-                      value={item.unit_price ?? ""}
-                      onChange={(e) => updateRow(idx, { unit_price: e.target.value || null })}
-                      disabled={disabled}
-                      className="w-full rounded-xl border-[1.5px] border-border bg-white/80 outline-none focus:border-primary/50 px-2.5 py-1.5 text-sm"
-                    />
-                  </div>
+                  {!hidePrice && (
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold text-muted">
+                        Цена, ₸ за {product?.unit ?? "ед."}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder={product?.default_price ?? "0"}
+                        value={item.unit_price ?? ""}
+                        onChange={(e) => updateRow(idx, { unit_price: e.target.value || null })}
+                        disabled={disabled}
+                        className="w-full rounded-xl border-[1.5px] border-border bg-white/80 outline-none focus:border-primary/50 px-2.5 py-1.5 text-sm"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="mb-1 block text-[11px] font-semibold text-muted">
                       Базовый вес, кг
@@ -142,9 +156,11 @@ export function OrderItemsEditor({ items, onChange, products, disabled }: OrderI
         </div>
       )}
 
-      <div className="flex justify-end text-[13.5px] font-semibold text-text">
-        Итого: {formatCurrency(total)}
-      </div>
+      {!hidePrice && (
+        <div className="flex justify-end text-[13.5px] font-semibold text-text">
+          Итого: {formatCurrency(total)}
+        </div>
+      )}
     </div>
   );
 }
