@@ -672,22 +672,6 @@ function Overlay({ children, onClose, maxWidth }: { children: React.ReactNode; o
   );
 }
 
-function ClientChip({ row }: { row: ClientOverviewRow }) {
-  const c = row.client;
-  return (
-    <div className="flex items-center gap-2.5">
-      <div
-        className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-white/70 text-[11px] font-bold text-white"
-        style={{ background: avatarGradient(c.name) }}
-      >
-        {initialsOf(c.name)}
-      </div>
-      <span className="text-[13.5px] font-semibold text-text">{c.name}</span>
-      {c.company_name && <span className="text-[12px] text-muted">{c.company_name}</span>}
-    </div>
-  );
-}
-
 function ShipmentsModal({
   row,
   onClose,
@@ -699,38 +683,36 @@ function ShipmentsModal({
 }) {
   const { data, isLoading } = useShipmentsList({ client_id: row.client.id, size: 100 });
   const shipments = data?.items ?? [];
-  const grid = "108px 92px minmax(0,1fr) 130px";
 
   return (
-    <Overlay onClose={onClose} maxWidth={720}>
-      <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-4">
-        <div>
-          <h3 className="text-[18px] font-bold tracking-tight text-text">Отгрузки клиента</h3>
-          <div className="mt-2 flex items-center gap-2.5">
-            <ClientChip row={row} />
-            <span className="rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
-              {data?.total ?? shipments.length} всего
-            </span>
+    <Overlay onClose={onClose} maxWidth={560}>
+      {/* header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6 sm:py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-indigo text-white shadow-[0_6px_16px_rgba(91,107,255,0.3)]">
+            <Truck className="h-[18px] w-[18px]" strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[16px] font-bold tracking-tight text-text sm:text-[17px]">Отгрузки клиента</h3>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="truncate text-[12.5px] font-medium text-text/70">{row.client.name}</span>
+              <span className="shrink-0 rounded-full border border-white/70 bg-white/55 px-2 py-0.5 text-[11px] font-medium text-muted">
+                {data?.total ?? shipments.length} всего
+              </span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={onReconcile}>
-            <FileText className="h-4 w-4" /> Акт сверки
-          </Button>
-          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-muted hover:bg-white/80" aria-label="Закрыть">
-            <X className="h-4 w-4" strokeWidth={2.2} />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-muted hover:bg-white/80"
+          aria-label="Закрыть"
+        >
+          <X className="h-4 w-4" strokeWidth={2.2} />
+        </button>
       </div>
 
-      <div className="grid gap-3 border-b border-border px-6 pb-2.5" style={{ gridTemplateColumns: grid }}>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Номер</span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Дата</span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Заказ</span>
-        <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Сумма</span>
-      </div>
-
-      <div className="overflow-y-auto px-3 pb-4">
+      {/* cards */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-5">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Spinner />
@@ -741,29 +723,44 @@ function ShipmentsModal({
             <div className="text-[13.5px] font-semibold text-text/70">Отгрузок нет</div>
           </div>
         ) : (
-          shipments.map((sh) => (
-            <a
-              key={sh.id}
-              href={`/orders/${sh.order_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="grid items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-white/60"
-              style={{ gridTemplateColumns: grid }}
-            >
-              <span className="flex items-center gap-1.5 text-[13px] font-bold tabular-nums text-text">
-                <Truck className="h-3.5 w-3.5 text-primary/60" strokeWidth={2} />
-                {sh.shipment_number}
-              </span>
-              <span className="text-[12.5px] text-muted">{formatDayMonth(sh.shipment_date)}</span>
-              <span className="truncate text-[12.5px] text-text">
-                {sh.order ? `Заказ ${sh.order.order_number}` : "—"}
-              </span>
-              <span className="text-right text-[13.5px] font-bold tabular-nums text-text">
-                {formatCurrency(sh.total_amount)}
-              </span>
-            </a>
-          ))
+          <div className="flex flex-col gap-2">
+            {shipments.map((sh) => (
+              <a
+                key={sh.id}
+                href={`/orders/${sh.order_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-3.5 py-3 transition-colors hover:bg-white/75"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Truck className="h-[17px] w-[17px]" strokeWidth={2} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13.5px] font-bold tabular-nums text-text">
+                    № {sh.shipment_number}
+                  </div>
+                  <div className="truncate text-[12px] text-muted">
+                    {formatDayMonth(sh.shipment_date)}
+                    {sh.order ? ` · Заказ ${sh.order.order_number}` : ""}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[14px] font-bold tabular-nums text-text">
+                  {formatCurrency(sh.total_amount)}
+                </span>
+              </a>
+            ))}
+          </div>
         )}
+      </div>
+
+      {/* footer */}
+      <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3.5">
+        <Button variant="secondary" size="sm" onClick={onReconcile}>
+          <FileText className="h-4 w-4" /> Акт сверки
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onClose}>
+          Закрыть
+        </Button>
       </div>
     </Overlay>
   );
@@ -809,59 +806,84 @@ function ReconcileModal({ row, onClose }: { row: ClientOverviewRow; onClose: () 
   const balance = Number(row.debt);
   const balanceLabel = balance > 0 ? "Долг клиента" : balance < 0 ? "Переплата клиента" : "Расчёты закрыты";
   const balanceColor = balance > 0 ? "#bd4836" : balance < 0 ? "#3f6fd6" : "#178a55";
-  const grid = "96px 92px minmax(0,1fr) 132px 120px";
 
   return (
-    <Overlay onClose={onClose} maxWidth={760}>
+    <Overlay onClose={onClose} maxWidth={600}>
       {/* header */}
-      <div className="flex items-center gap-3 border-b border-border px-6 py-5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-indigo text-white shadow-[0_6px_16px_rgba(91,107,255,0.3)]">
-          <FileText className="h-[18px] w-[18px]" strokeWidth={2} />
-        </span>
-        <div className="flex-1">
-          <h3 className="text-[17px] font-bold tracking-tight text-text">Акт сверки</h3>
-          <div className="mt-1">
-            <ClientChip row={row} />
+      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6 sm:py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-indigo text-white shadow-[0_6px_16px_rgba(91,107,255,0.3)]">
+            <FileText className="h-[18px] w-[18px]" strokeWidth={2} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[16px] font-bold tracking-tight text-text sm:text-[17px]">Акт сверки</h3>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                style={{ background: avatarGradient(row.client.name) }}
+              >
+                {initialsOf(row.client.name)}
+              </span>
+              <span className="truncate text-[12.5px] font-medium text-text/70">{row.client.name}</span>
+            </div>
           </div>
         </div>
-        <div className="rounded-2xl border px-4 py-2 text-right" style={{ borderColor: `${balanceColor}38`, background: `${balanceColor}14`, color: balanceColor }}>
-          <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] opacity-75">{balanceLabel}</div>
-          <div className="text-[18px] font-bold tracking-tight tabular-nums">{formatCurrency(Math.abs(balance))}</div>
-        </div>
-        <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-muted hover:bg-white/80" aria-label="Закрыть">
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-muted hover:bg-white/80"
+          aria-label="Закрыть"
+        >
           <X className="h-4 w-4" strokeWidth={2.2} />
         </button>
       </div>
 
-      {/* summary */}
-      <div className="grid grid-cols-3 gap-3 px-6 py-4">
-        <div className="rounded-2xl border border-danger/20 bg-danger-bg px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Отгружено</div>
-          <div className="mt-1 text-[17px] font-bold tabular-nums text-danger">{formatCurrency(totalShipped)}</div>
-        </div>
-        <div className="rounded-2xl border border-success/20 bg-success-bg px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">Оплачено</div>
-          <div className="mt-1 text-[17px] font-bold tabular-nums text-success">{formatCurrency(totalPaid)}</div>
-        </div>
-        <div className="rounded-2xl border px-4 py-3" style={{ borderColor: `${balanceColor}30`, background: `${balanceColor}12` }}>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted">{balanceLabel}</div>
-          <div className="mt-1 text-[17px] font-bold tabular-nums" style={{ color: balanceColor }}>
+      {/* summary: «герой»-баланс + две карточки */}
+      <div className="flex flex-col gap-2.5 px-4 py-4 sm:px-6">
+        <div
+          className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3.5"
+          style={{ borderColor: `${balanceColor}33`, background: `${balanceColor}12` }}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              style={{ background: `${balanceColor}1f`, color: balanceColor }}
+            >
+              <Wallet className="h-[18px] w-[18px]" strokeWidth={2} />
+            </span>
+            <span className="text-[12.5px] font-semibold uppercase tracking-[0.04em]" style={{ color: balanceColor }}>
+              {balanceLabel}
+            </span>
+          </div>
+          <span className="text-[20px] font-bold tabular-nums sm:text-[22px]" style={{ color: balanceColor }}>
             {formatCurrency(Math.abs(balance))}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="rounded-2xl border border-danger/20 bg-danger-bg px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Отгружено</div>
+            <div className="mt-1 text-[16px] font-bold tabular-nums text-danger sm:text-[17px]">
+              {formatCurrency(totalShipped)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-success/20 bg-success-bg px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Оплачено</div>
+            <div className="mt-1 text-[16px] font-bold tabular-nums text-success sm:text-[17px]">
+              {formatCurrency(totalPaid)}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ledger header */}
-      <div className="grid gap-3 border-b border-border px-6 pb-2" style={{ gridTemplateColumns: grid }}>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Дата</span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Тип</span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Описание</span>
-        <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Сумма</span>
-        <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Баланс</span>
+      {/* ledger title */}
+      <div className="flex items-center gap-2 px-5 pb-2 sm:px-6">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.05em] text-muted">Операции</span>
+        <span className="rounded-full border border-white/70 bg-white/55 px-2 py-0.5 text-[11px] font-medium text-muted">
+          {ledger.length}
+        </span>
       </div>
 
-      {/* ledger rows */}
-      <div className="flex-1 overflow-y-auto px-6 py-1">
+      {/* ledger cards */}
+      <div className="flex-1 overflow-y-auto px-4 pb-3 sm:px-5">
         {loading ? (
           <div className="flex justify-center py-12">
             <Spinner />
@@ -869,38 +891,58 @@ function ReconcileModal({ row, onClose }: { row: ClientOverviewRow; onClose: () 
         ) : ledger.length === 0 ? (
           <div className="py-12 text-center text-[13px] text-muted">Операций по клиенту нет</div>
         ) : (
-          ledger.map((t, i) => {
-            const isShip = t.type === "ship";
-            return (
-              <div key={i} className="grid items-center gap-3 border-b border-border/50 py-2.5" style={{ gridTemplateColumns: grid }}>
-                <span className="text-[12.5px] text-muted">{formatDayMonth(t.date)}</span>
-                <span
-                  className={clsx(
-                    "inline-flex w-fit items-center rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold",
-                    isShip ? "border-danger/25 bg-danger-bg text-danger" : "border-success/25 bg-success-bg text-success"
-                  )}
+          <div className="flex flex-col gap-2">
+            {ledger.map((t, i) => {
+              const isShip = t.type === "ship";
+              const balColor = t.balance > 0 ? "#bd4836" : t.balance < 0 ? "#3f6fd6" : "#178a55";
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/45 px-3.5 py-3"
                 >
-                  {isShip ? "Отгрузка" : "Оплата"}
-                </span>
-                <span className="truncate text-[13px] text-text">{t.note}</span>
-                <span className={clsx("text-right text-[13px] font-bold tabular-nums", isShip ? "text-danger" : "text-success")}>
-                  {isShip ? "+ " : "− "}
-                  {formatCurrency(t.amount)}
-                </span>
-                <span
-                  className="text-right text-[13px] font-bold tabular-nums"
-                  style={{ color: t.balance > 0 ? "#bd4836" : t.balance < 0 ? "#3f6fd6" : "#178a55" }}
-                >
-                  {formatCurrency(Math.abs(t.balance))}
-                </span>
-              </div>
-            );
-          })
+                  <span
+                    className={clsx(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                      isShip ? "bg-danger-bg text-danger" : "bg-success-bg text-success"
+                    )}
+                  >
+                    {isShip ? (
+                      <Truck className="h-[16px] w-[16px]" strokeWidth={2} />
+                    ) : (
+                      <Wallet className="h-[16px] w-[16px]" strokeWidth={2} />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-text">{t.note}</div>
+                    <div className="flex items-center gap-1.5 text-[11.5px] text-muted">
+                      <span>{formatDayMonth(t.date)}</span>
+                      <span>·</span>
+                      <span>{isShip ? "Отгрузка" : "Оплата"}</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div
+                      className={clsx(
+                        "text-[13.5px] font-bold tabular-nums",
+                        isShip ? "text-danger" : "text-success"
+                      )}
+                    >
+                      {isShip ? "+ " : "− "}
+                      {formatCurrency(t.amount)}
+                    </div>
+                    <div className="text-[11px] font-semibold tabular-nums" style={{ color: balColor }}>
+                      Остаток {formatCurrency(Math.abs(t.balance))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      <div className="flex justify-end border-t border-border px-6 py-4">
-        <Button variant="secondary" onClick={onClose}>
+      <div className="flex justify-end border-t border-border px-5 py-3.5">
+        <Button variant="secondary" size="sm" onClick={onClose}>
           Закрыть
         </Button>
       </div>

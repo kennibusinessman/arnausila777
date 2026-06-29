@@ -1,10 +1,12 @@
 "use client";
 
+import { clsx } from "clsx";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { useCreateMaterial, useUpdateMaterial } from "@/lib/hooks/useMaterials";
 import { apiErrorMessage } from "@/lib/api/http";
+import { RAW_MATERIAL_SUBCATEGORIES } from "@/lib/utils/productCategories";
 import type { MaterialRead } from "@/lib/types/material";
 
 interface FormState {
@@ -96,7 +98,7 @@ export function MaterialFormModal({ open, material, onClose, onSaved }: Material
             className={inputClass}
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 items-start gap-3">
           <div>
             <label className="mb-1 block text-[13px] font-semibold text-text">SKU</label>
             <input
@@ -114,6 +116,23 @@ export function MaterialFormModal({ open, material, onClose, onSaved }: Material
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               className={inputClass}
             />
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {RAW_MATERIAL_SUBCATEGORIES.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  onClick={() => setForm({ ...form, category: form.category === c ? "" : c })}
+                  className={clsx(
+                    "rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition-colors",
+                    form.category === c
+                      ? "border-primary/40 bg-primary-50 text-primary"
+                      : "border-border bg-white/60 text-muted hover:text-text"
+                  )}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

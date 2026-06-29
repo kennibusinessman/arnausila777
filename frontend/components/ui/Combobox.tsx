@@ -21,6 +21,26 @@ interface ComboboxProps {
   creating?: boolean;
 }
 
+/**
+ * Гасит «призрачные» mouse-события, которые тач-браузер досылает по координате
+ * тапа уже ПОСЛЕ того, как выпадашка закрылась. Иначе клик «проваливается» в поле
+ * под списком (напр. «Кол-во» прямо под комбобоксом) и фокусирует его — на iOS/Android
+ * это выглядит как «тапнул по наименованию, попал в количество». Только для тач-устройств.
+ */
+function swallowGhostTap() {
+  if (typeof window === "undefined") return;
+  if (!window.matchMedia || !window.matchMedia("(pointer: coarse)").matches) return;
+  const types = ["mousedown", "mouseup", "click"] as const;
+  const cleanup = () => types.forEach((t) => window.removeEventListener(t, swallow, true));
+  const swallow = (e: Event) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.type === "click") cleanup();
+  };
+  types.forEach((t) => window.addEventListener(t, swallow, true));
+  window.setTimeout(cleanup, 400);
+}
+
 /** Простой клиентский searchable-select без серверного поиска — рассчитан на справочники в пределах сотни записей (клиенты/товары/менеджеры). */
 export function Combobox({
   value,
@@ -48,6 +68,7 @@ export function Combobox({
     setOpen(false);
     setQuery("");
     inputRef.current?.blur();
+    swallowGhostTap();
   }
 
   useEffect(() => {

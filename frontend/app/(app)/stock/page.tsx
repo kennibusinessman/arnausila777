@@ -39,13 +39,19 @@ import type { MaterialRead } from "@/lib/types/material";
 import { ItemType, MovementType, UserRole } from "@/lib/types/enums";
 import { formatDateTime, formatNumber, formatWeight } from "@/lib/utils/format";
 import { movementTypeLabels, sourceTypeLabels } from "@/lib/utils/stockLabels";
-import { SPUNBOND_SUBCATEGORIES } from "@/lib/utils/productCategories";
+import {
+  RAW_MATERIAL_CATEGORY,
+  RAW_MATERIAL_SUBCATEGORIES,
+  SPUNBOND_SUBCATEGORIES,
+  rawSubcategoryOf,
+} from "@/lib/utils/productCategories";
 import { CATEGORY_COLOR, CATEGORY_ORDER, CATEGORY_SHORT } from "@/lib/utils/shiftRawRules";
 import { FINISHED_WAREHOUSE_TYPES, RAW_WAREHOUSE_TYPES, pickWarehouseId } from "@/lib/utils/warehouseResolution";
 
 const PAGE_SIZE = 20;
 const DASTARKHAN = "Дастархан";
 const SPUNBOND = "Спанбонд";
+const RAW_CHIP_COLOR = "#c47d1f";
 
 const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
 
@@ -186,26 +192,39 @@ export default function StockPage() {
     return Array.from(map.values());
   }, [balances.data, productMap, materialMap]);
 
-  // Фильтр по категории + (для Спанбонда) подкатегории; товары вперёд, потом сырьё.
+  // «Сырьё» — это не значение category, а фильтр по типу позиции (все материалы).
+  const isRawView = categoryFilter === RAW_MATERIAL_CATEGORY;
+
+  // Фильтр по категории + подкатегории (Спанбонд → subcategory товара, Сырьё → category материала).
   const sortedBalances = useMemo(() => {
-    let filtered = categoryFilter
-      ? aggregatedBalances.filter((r) => norm(r.category) === norm(categoryFilter))
-      : aggregatedBalances;
-    if (categoryFilter === SPUNBOND && subcategoryFilter) {
-      filtered = filtered.filter((r) => norm(r.subcategory) === norm(subcategoryFilter));
+    let filtered: AggregatedBalance[];
+    if (isRawView) {
+      filtered = aggregatedBalances.filter((r) => r.item_type === ItemType.MATERIAL);
+      if (subcategoryFilter) {
+        filtered = filtered.filter((r) => rawSubcategoryOf(r) === subcategoryFilter);
+      }
+    } else if (categoryFilter) {
+      filtered = aggregatedBalances.filter((r) => norm(r.category) === norm(categoryFilter));
+      if (categoryFilter === SPUNBOND && subcategoryFilter) {
+        filtered = filtered.filter((r) => norm(r.subcategory) === norm(subcategoryFilter));
+      }
+    } else {
+      filtered = aggregatedBalances;
     }
     return [...filtered].sort((a, b) => {
       if (a.item_type !== b.item_type) return a.item_type === ItemType.PRODUCT ? -1 : 1;
       return a.name.localeCompare(b.name, "ru");
     });
-  }, [aggregatedBalances, categoryFilter, subcategoryFilter]);
+  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView]);
 
   // KPI по текущему фильтру.
   const showWeight = categoryFilter !== DASTARKHAN;
   // «Общий вес товара» — только готовая продукция. Сырьё (в т.ч. Полипропилен)
   // в общий вес не входит — оно учитывается отдельной KPI «Сырьё ПП».
+  // В разделе «Сырьё» считаем вес самих материалов (они в кг).
   const weightSum = sortedBalances.reduce(
-    (s, r) => s + (r.item_type === ItemType.PRODUCT ? weightKgOf(r) ?? 0 : 0),
+    (s, r) =>
+      s + (isRawView ? weightKgOf(r) ?? 0 : r.item_type === ItemType.PRODUCT ? weightKgOf(r) ?? 0 : 0),
     0
   );
   const piecesSum = sortedBalances.reduce((s, r) => s + (norm(r.unit) === "шт" ? r.quantity : 0), 0);
@@ -362,7 +381,15 @@ export default function StockPage() {
   const categoryChips = [
     { id: null as string | null, label: "Все категории", color: "rgba(40,40,60,0.3)" },
     ...CATEGORY_ORDER.map((c) => ({ id: c, label: c, color: CATEGORY_COLOR[c] ?? "#5b8def" })),
+    { id: RAW_MATERIAL_CATEGORY, label: RAW_MATERIAL_CATEGORY, color: RAW_CHIP_COLOR },
   ];
+
+  // Подкатегории текущего раздела (Спанбонд — формы выпуска, Сырьё — вид сырья).
+  const subChips = isRawView
+    ? RAW_MATERIAL_SUBCATEGORIES
+    : categoryFilter === SPUNBOND
+    ? SPUNBOND_SUBCATEGORIES
+    : null;
 
   // Сетка таблицы остатков — общая для шапки и строк.
   const COLS =
@@ -423,7 +450,7 @@ export default function StockPage() {
       {tab === "balances" ? (
         <>
           {/* ===== CATEGORY CHIPS ===== */}
-          <div className="glass inline-flex flex-wrap items-center gap-1 self-start rounded-2xl p-1.5">
+          <div className="glass flex flex-wrap items-center gap-1.5 self-stretch rounded-2xl p-1.5 sm:inline-flex sm:self-start">
             {categoryChips.map((c) => (
               <button
                 key={c.id ?? "all"}
@@ -444,21 +471,21 @@ export default function StockPage() {
             ))}
           </div>
 
-          {/* ===== SUBCATEGORY CHIPS (только Спанбонд) ===== */}
-          {categoryFilter === SPUNBOND && (
-            <div className="flex items-center gap-2.5 self-start">
-              <span className="pl-1 text-[12px] font-semibold text-muted">Подкатегория</span>
-              <div className="glass inline-flex items-center gap-1 rounded-xl p-1">
-                {[{ id: null as string | null, label: "Все" }, ...SPUNBOND_SUBCATEGORIES.map((s) => ({ id: s, label: s }))].map(
+          {/* ===== SUBCATEGORY CHIPS (Спанбонд / Сырьё) ===== */}
+          {subChips && (
+            <div className="glass flex flex-col gap-2 self-stretch rounded-2xl p-2.5 sm:flex-row sm:items-center sm:gap-3 sm:self-start">
+              <span className="px-1 text-[12px] font-semibold text-muted">Подкатегория</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[{ id: null as string | null, label: "Все" }, ...subChips.map((s) => ({ id: s, label: s }))].map(
                   (s) => (
                     <button
                       key={s.id ?? "all"}
                       onClick={() => setSubcategoryFilter(s.id)}
                       className={clsx(
-                        "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors",
+                        "rounded-lg px-3 py-1.5 text-[12.5px] transition-colors",
                         subcategoryFilter === s.id
-                          ? "bg-white text-text font-semibold shadow-sm"
-                          : "text-muted hover:text-text"
+                          ? "bg-white font-semibold text-text shadow-sm"
+                          : "bg-white/50 text-muted hover:text-text"
                       )}
                     >
                       {s.label}
@@ -473,7 +500,12 @@ export default function StockPage() {
           <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
             <KpiCard label="Позиций на складе" value={formatNumber(sortedBalances.length)} tone="primary" icon={Boxes} />
             {showWeight ? (
-              <KpiCard label="Общий вес товара" value={formatWeight(weightSum)} tone="neutral" icon={Scale} />
+              <KpiCard
+                label={isRawView ? "Общий вес сырья" : "Общий вес товара"}
+                value={formatWeight(weightSum)}
+                tone="neutral"
+                icon={Scale}
+              />
             ) : (
               <KpiCard label="Остаток, шт" value={`${formatNumber(piecesSum)} шт`} tone="success" icon={Package} />
             )}
