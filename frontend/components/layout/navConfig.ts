@@ -37,7 +37,7 @@ export const navItems: NavItem[] = [
     href: "/shift-reports",
     label: "Сменные отчёты",
     icon: ClipboardList,
-    roles: [SUPER_ADMIN, BOSS, SHIFT_MASTER],
+    roles: [SUPER_ADMIN, BOSS, SHIFT_MASTER, WAREHOUSE_MANAGER],
   },
   { href: "/stock", label: "Остатки", icon: Package, roles: [SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER] },
   { href: "/expenses", label: "Расходы", icon: Receipt, roles: [SUPER_ADMIN, BOSS] },

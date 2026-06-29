@@ -132,6 +132,9 @@ export default function ShiftReportsPage() {
   const router = useRouter();
   const role = useAuthStore((s) => s.user?.role);
   const isMaster = role === UserRole.SHIFT_MASTER;
+  // Зав. складом отчёты только смотрит и утверждает — создавать не может.
+  const canCreate =
+    role === UserRole.SUPER_ADMIN || role === UserRole.BOSS || role === UserRole.SHIFT_MASTER;
 
   const [status, setStatus] = useState<ShiftReportStatus | "">("");
   const [shiftType, setShiftType] = useState<ShiftType | "">("");
@@ -315,10 +318,12 @@ export default function ShiftReportsPage() {
             {displayed.length}
           </span>
           <div className="flex-1" />
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" strokeWidth={2.4} />
-            Новый отчёт
-          </Button>
+          {canCreate && (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" strokeWidth={2.4} />
+              Новый отчёт
+            </Button>
+          )}
         </div>
 
         {isLoading ? (

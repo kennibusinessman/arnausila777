@@ -56,6 +56,8 @@ export default function ShiftReportDetailPage() {
   const role = useAuthStore((s) => s.user?.role);
   const userId = useAuthStore((s) => s.user?.id);
   const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+  // Утверждать/отклонять отчёты может ещё и зав. складом (правка/удаление — нет).
+  const canApprove = isAdmin || role === UserRole.WAREHOUSE_MANAGER;
 
   const { data: report, isLoading, isError, error } = useShiftReport(reportId);
   const updateReport = useUpdateShiftReport(reportId);
@@ -198,7 +200,7 @@ export default function ShiftReportDetailPage() {
             </Button>
           </>
         )}
-        {isAdmin && report.status === ShiftReportStatus.SUBMITTED && (
+        {canApprove && report.status === ShiftReportStatus.SUBMITTED && (
           <>
             <Button variant="success" size="sm" disabled={approveReport.isPending} onClick={handleApprove}>
               Утвердить

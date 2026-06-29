@@ -34,11 +34,30 @@ Master = Annotated[
 ]
 Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 ShiftMaster = Annotated[User, Depends(require_roles(UserRole.SHIFT_MASTER))]
+# Контроль производства: видеть список и утверждать/отклонять отчёты может ещё и
+# зав. складом — утверждение приходует продукцию на склад, это его зона.
+# (Создавать/править/удалять отчёты он не может — это остаётся за мастером/SA/B.)
+Overseer = Annotated[
+    User,
+    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
+]
+# Просмотр карточки отчёта: SA/B, мастер смены (свои) и зав. складом.
+Viewer = Annotated[
+    User,
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.SHIFT_MASTER,
+            UserRole.WAREHOUSE_MANAGER,
+        )
+    ),
+]
 
 
 @router.get("", response_model=Page[ShiftReportListItem])
 async def list_reports(
-    actor: Admin,
+    actor: Overseer,
     db: DbSession,
     params: Pagination,
     status: Annotated[ShiftReportStatus | None, Query()] = None,
@@ -85,7 +104,7 @@ async def create_report(
 
 
 @router.get("/{report_id}", response_model=ShiftReportRead)
-async def get_report(report_id: uuid.UUID, actor: Master, db: DbSession) -> ShiftReportRead:
+async def get_report(report_id: uuid.UUID, actor: Viewer, db: DbSession) -> ShiftReportRead:
     report = await shift_report_service.get_full(db, actor, report_id)
     return ShiftReportRead.model_validate(report)
 
@@ -108,7 +127,7 @@ async def submit_report(
 
 @router.post("/{report_id}/approve", response_model=ShiftReportRead)
 async def approve_report(
-    report_id: uuid.UUID, data: ApproveRequest, actor: Admin, db: DbSession
+    report_id: uuid.UUID, data: ApproveRequest, actor: Overseer, db: DbSession
 ) -> ShiftReportRead:
     report = await shift_report_service.approve(db, actor, report_id, data)
     return ShiftReportRead.model_validate(report)
@@ -116,7 +135,7 @@ async def approve_report(
 
 @router.post("/{report_id}/reject", response_model=ShiftReportRead)
 async def reject_report(
-    report_id: uuid.UUID, data: RejectRequest, actor: Admin, db: DbSession
+    report_id: uuid.UUID, data: RejectRequest, actor: Overseer, db: DbSession
 ) -> ShiftReportRead:
     report = await shift_report_service.reject(db, actor, report_id, data.comment)
     return ShiftReportRead.model_validate(report)
