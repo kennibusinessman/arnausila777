@@ -132,9 +132,12 @@ export default function ShiftReportsPage() {
   const router = useRouter();
   const role = useAuthStore((s) => s.user?.role);
   const isMaster = role === UserRole.SHIFT_MASTER;
-  // Зав. складом отчёты только смотрит и утверждает — создавать не может.
+  // Создавать отчёты могут SA/B, мастер смены и зав. складом.
   const canCreate =
-    role === UserRole.SUPER_ADMIN || role === UserRole.BOSS || role === UserRole.SHIFT_MASTER;
+    role === UserRole.SUPER_ADMIN ||
+    role === UserRole.BOSS ||
+    role === UserRole.SHIFT_MASTER ||
+    role === UserRole.WAREHOUSE_MANAGER;
 
   const [status, setStatus] = useState<ShiftReportStatus | "">("");
   const [shiftType, setShiftType] = useState<ShiftType | "">("");

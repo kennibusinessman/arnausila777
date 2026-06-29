@@ -28,9 +28,18 @@ from app.services import shift_report_service
 
 router = APIRouter(prefix="/shift-reports", tags=["shift-reports"])
 
+# Авторы отчётов: создают/правят/отправляют. Зав. складом тоже заводит сменные
+# отчёты (создатель становится «старшим смены», как и SA/B при создании из формы).
 Master = Annotated[
     User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SHIFT_MASTER)),
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.SHIFT_MASTER,
+            UserRole.WAREHOUSE_MANAGER,
+        )
+    ),
 ]
 Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 ShiftMaster = Annotated[User, Depends(require_roles(UserRole.SHIFT_MASTER))]

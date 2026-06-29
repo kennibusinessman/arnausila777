@@ -34,12 +34,19 @@ Reader = Annotated[
 ]
 # Редактировать справочник могут только SA/B.
 Writer = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
-# Создавать товар может ещё и мастер смены — заводит новую продукцию «на ходу»
-# прямо из формы сменного отчёта (см. CreateProductModal во фронте). Правка/удаление
-# при этом остаются за SA/B.
+# Создавать товар могут ещё мастер смены и зав. складом — заводят новую продукцию
+# «на ходу» прямо из формы сменного отчёта (см. CreateProductModal во фронте).
+# Правка/удаление при этом остаются за SA/B.
 Creator = Annotated[
     User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SHIFT_MASTER)),
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.SHIFT_MASTER,
+            UserRole.WAREHOUSE_MANAGER,
+        )
+    ),
 ]
 # Удаление — расширенное право, только супер-админ.
 SuperAdminUser = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN))]
