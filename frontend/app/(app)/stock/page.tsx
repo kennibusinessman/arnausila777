@@ -202,7 +202,12 @@ export default function StockPage() {
 
   // KPI по текущему фильтру.
   const showWeight = categoryFilter !== DASTARKHAN;
-  const weightSum = sortedBalances.reduce((s, r) => s + (weightKgOf(r) ?? 0), 0);
+  // «Общий вес товара» — только готовая продукция. Сырьё (в т.ч. Полипропилен)
+  // в общий вес не входит — оно учитывается отдельной KPI «Сырьё ПП».
+  const weightSum = sortedBalances.reduce(
+    (s, r) => s + (r.item_type === ItemType.PRODUCT ? weightKgOf(r) ?? 0 : 0),
+    0
+  );
   const piecesSum = sortedBalances.reduce((s, r) => s + (norm(r.unit) === "шт" ? r.quantity : 0), 0);
   const lowCount = sortedBalances.filter((r) => statusOf(r) === "low").length;
   // Запас сырья ПП (полипропилен) — глобально, независимо от фильтра.
@@ -468,7 +473,7 @@ export default function StockPage() {
           <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
             <KpiCard label="Позиций на складе" value={formatNumber(sortedBalances.length)} tone="primary" icon={Boxes} />
             {showWeight ? (
-              <KpiCard label="Общий вес склада" value={formatWeight(weightSum)} tone="neutral" icon={Scale} />
+              <KpiCard label="Общий вес товара" value={formatWeight(weightSum)} tone="neutral" icon={Scale} />
             ) : (
               <KpiCard label="Остаток, шт" value={`${formatNumber(piecesSum)} шт`} tone="success" icon={Package} />
             )}
