@@ -18,7 +18,6 @@ import {
   CATEGORY_ORDER,
   PRODUCT_CATEGORY,
   categoryOfProduct,
-  categoryOfRawLine,
   rawSlotsForCategories,
   type RawSlot,
 } from "@/lib/utils/shiftRawRules";
@@ -107,7 +106,9 @@ export function ShiftReportForm({
     catSeededRef.current = true;
   }, [initial.outputs, products]);
 
-  // В режиме правки: разово раскладываем сохранённое сырьё по слотам.
+  // В режиме правки: разово раскладываем сохранённое сырьё по слотам. Слот один и
+  // определяется категорией выпуска отчёта: сырьё-материал (Полипропилен) → слот
+  // «Спанбонд», сырьё-полуфабрикат (любой спанбонд) → слот категории выпуска.
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current) return;
@@ -116,18 +117,20 @@ export function ShiftReportForm({
       return;
     }
     if (products.length === 0) return;
+    const firstOutputId = initial.outputs[0]?.product_id;
+    const outputCat = firstOutputId ? categoryOfProduct(firstOutputId, products) : null;
     const next: Record<string, RawLineState> = {};
     for (const line of initial.materials) {
-      const lineCategory = categoryOfRawLine(line, products);
-      if (!lineCategory) continue;
-      next[lineCategory] = {
+      const key = line.material_id ? PRODUCT_CATEGORY.SPUNBOND : outputCat;
+      if (!key) continue;
+      next[key] = {
         refId: line.material_id || line.product_id || "",
         quantity: line.quantity_used,
       };
     }
     setRawValues(next);
     seededRef.current = true;
-  }, [initial.materials, products]);
+  }, [initial.materials, initial.outputs, products]);
 
   function changeCategory(next: string) {
     if (next === category) return;

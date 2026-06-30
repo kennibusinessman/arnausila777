@@ -3,8 +3,12 @@
  * выбирается вручную, а подставляется по категории выпускаемой продукции:
  *
  *  - Спанбонд            → сырьё Полипропилен (материал со склада сырья);
- *  - Одноразовые простыни → сырьё Спанбонд, подкатегория «Бабины» (товар-полуфабрикат);
- *  - Дастархан           → сырьё Спанбонд, подкатегория «Дастархан сырьё» (товар-полуфабрикат).
+ *  - Одноразовые простыни → сырьё Спанбонд — ЛЮБОЙ товар категории «Спанбонд»;
+ *  - Дастархан           → сырьё Спанбонд — ЛЮБОЙ товар категории «Спанбонд».
+ *
+ * Для простыней/дастархана в выпадающем списке доступен весь спанбонд (любая
+ * подкатегория). Подкатегория из defaultSubcategory подставляется только при
+ * создании сырья-товара «на ходу» — сам список подкатегорий не меняется.
  *
  * Строковые константы должны совпадать с category/subcategory в справочнике товаров
  * (см. backend/app/models/product.py).
@@ -53,22 +57,20 @@ const RULES: Record<string, RawRule> = {
     matches: (m) => norm(m.name).includes(norm(POLYPROPYLENE)),
   },
   [PRODUCT_CATEGORY.SHEETS]: {
-    title: `${PRODUCT_CATEGORY.SPUNBOND} · ${SPUNBOND_SUBCATEGORY.BOBBINS}`,
+    title: PRODUCT_CATEGORY.SPUNBOND,
     kind: "product",
     defaultCategory: PRODUCT_CATEGORY.SPUNBOND,
     defaultSubcategory: SPUNBOND_SUBCATEGORY.BOBBINS,
-    matches: (p) =>
-      norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND) &&
-      norm((p as ProductRead).subcategory) === norm(SPUNBOND_SUBCATEGORY.BOBBINS),
+    // Простыни делают из любого спанбонда — подкатегорию не фильтруем.
+    matches: (p) => norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND),
   },
   [PRODUCT_CATEGORY.DASTARKHAN]: {
-    title: `${PRODUCT_CATEGORY.SPUNBOND} · ${SPUNBOND_SUBCATEGORY.DASTARKHAN_RAW}`,
+    title: PRODUCT_CATEGORY.SPUNBOND,
     kind: "product",
     defaultCategory: PRODUCT_CATEGORY.SPUNBOND,
     defaultSubcategory: SPUNBOND_SUBCATEGORY.DASTARKHAN_RAW,
-    matches: (p) =>
-      norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND) &&
-      norm((p as ProductRead).subcategory) === norm(SPUNBOND_SUBCATEGORY.DASTARKHAN_RAW),
+    // Дастархан тоже делают из любого спанбонда — подкатегорию не фильтруем.
+    matches: (p) => norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND),
   },
 };
 
@@ -136,21 +138,6 @@ export function deriveRawSlots(
     if (c) cats.push(c);
   }
   return rawSlotsForCategories(cats, products, materials);
-}
-
-/** К какому слоту относится уже сохранённая строка сырья (для режима правки). */
-export function categoryOfRawLine(
-  line: { material_id?: string | null; product_id?: string | null },
-  products: ProductRead[]
-): string | null {
-  if (line.material_id) return PRODUCT_CATEGORY.SPUNBOND;
-  if (line.product_id) {
-    const p = products.find((x) => x.id === line.product_id);
-    if (norm(p?.subcategory) === norm(SPUNBOND_SUBCATEGORY.BOBBINS)) return PRODUCT_CATEGORY.SHEETS;
-    if (norm(p?.subcategory) === norm(SPUNBOND_SUBCATEGORY.DASTARKHAN_RAW))
-      return PRODUCT_CATEGORY.DASTARKHAN;
-  }
-  return null;
 }
 
 /** Цвет-метка категории — для точек/чипов в таблице (см. zakk/otcet.html). */

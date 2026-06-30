@@ -1,4 +1,4 @@
-"""Справочник сырья: /api/materials. Скрыт от SaM/SM."""
+"""Справочник сырья: /api/materials. Скрыт от менеджера по продажам."""
 from __future__ import annotations
 
 import uuid
@@ -20,10 +20,18 @@ from app.services import audit_service
 router = APIRouter(prefix="/materials", tags=["materials"])
 repo = CRUDRepository(Material, soft_delete=True)
 
-# Сырьё доступно только SA/B/WM.
+# Сырьё читают SA/B/WM, а также мастер смены — ему нужен Полипропилен как расход
+# в сменном отчёте по спанбонду. Заводить/править справочник по-прежнему только SA/B.
 Reader = Annotated[
     User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
+    Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.BOSS,
+            UserRole.WAREHOUSE_MANAGER,
+            UserRole.SHIFT_MASTER,
+        )
+    ),
 ]
 Writer = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 # Удаление — расширенное право, только супер-админ.

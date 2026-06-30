@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Combobox } from "@/components/ui/Combobox";
 import { Modal } from "@/components/ui/Modal";
+import { CreateClientModal } from "@/components/orders/CreateClientModal";
 import { OrderItemsEditor } from "@/components/orders/OrderItemsEditor";
 import { useAuthStore } from "@/lib/auth/store";
 import { useClientOptions } from "@/lib/hooks/useClients";
@@ -34,6 +35,8 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
   const [items, setItems] = useState<OrderItemCreate[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Имя для поп-апа создания клиента «на ходу» (null — окно закрыто).
+  const [newClientName, setNewClientName] = useState<string | null>(null);
 
   const role = useAuthStore((s) => s.user?.role);
   const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
@@ -54,6 +57,7 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
     setItems([]);
     setComment("");
     setError(null);
+    setNewClientName(null);
   }
 
   function handleClose() {
@@ -89,6 +93,7 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
   }
 
   return (
+    <>
     <Modal open={open} title="Новый заказ" onClose={handleClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
@@ -122,6 +127,8 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
             placeholder={clients.isLoading ? "Загрузка…" : "Найти клиента по имени…"}
             disabled={createOrder.isPending}
             allowClear={false}
+            onCreate={(label) => setNewClientName(label)}
+            creating={newClientName !== null}
           />
         </div>
 
@@ -161,5 +168,17 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
         </div>
       </form>
     </Modal>
+
+    <CreateClientModal
+      open={newClientName !== null}
+      defaultName={newClientName ?? ""}
+      onClose={() => setNewClientName(null)}
+      onCreated={(client) => {
+        // Свежесозданный клиент сразу выбран; список опций обновится через invalidate.
+        setClientId(client.id);
+        setNewClientName(null);
+      }}
+    />
+    </>
   );
 }

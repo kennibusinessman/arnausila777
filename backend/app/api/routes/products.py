@@ -20,7 +20,8 @@ from app.services import audit_service, report_service
 router = APIRouter(prefix="/products", tags=["products"])
 repo = CRUDRepository(Product, soft_delete=True)
 
-# Продукцию видят все операционные роли (нужна для форм заказа/отгрузки/склада).
+# Продукцию видят все операционные роли (нужна для форм заказа/отгрузки/склада), а
+# также мастер смены — он выбирает выпуск и сырьё-спанбонд в сменном отчёте.
 Reader = Annotated[
     User,
     Depends(
@@ -29,6 +30,7 @@ Reader = Annotated[
             UserRole.BOSS,
             UserRole.WAREHOUSE_MANAGER,
             UserRole.SALES_MANAGER,
+            UserRole.SHIFT_MASTER,
         )
     ),
 ]

@@ -35,7 +35,7 @@ Manager = Annotated[
     Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
 ]
 # Зав. складом тоже читает справочник клиентов — нужен для выбора клиента при
-# «забивании» заказа. Создавать/править/смотреть статистику (там долги) — нельзя.
+# «забивании» заказа. Смотреть статистику (там долги) и править справочник — нельзя.
 Reader = Annotated[
     User,
     Depends(
@@ -47,6 +47,9 @@ Reader = Annotated[
         )
     ),
 ]
+# Завести нового клиента «на ходу» из формы заказа может и зав. складом — он
+# «забивает» заказы. Правка справочника и статистика остаются недоступны.
+Creator = Reader
 Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
 
 
@@ -102,10 +105,11 @@ async def clients_overview(
 
 
 @router.post("", response_model=ClientRead, status_code=201)
-async def create_client(data: ClientCreate, actor: Manager, db: DbSession) -> ClientRead:
+async def create_client(data: ClientCreate, actor: Creator, db: DbSession) -> ClientRead:
     payload = data.model_dump()
     if _is_sales(actor):
         payload["manager_id"] = actor.id  # менеджер ведёт только своих
+    # Зав. складом создаёт клиента без привязки к менеджеру (manager_id остаётся пустым).
     obj = await repo.create(db, payload)
     await db.commit()
     await db.refresh(obj)
