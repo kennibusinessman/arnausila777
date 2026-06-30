@@ -47,6 +47,8 @@ interface RawRule {
   /** Подставляется при создании нового сырья-товара «на ходу». */
   defaultCategory?: string;
   defaultSubcategory?: string;
+  /** Разрешить несколько строк сырья (кнопка «Добавить сырьё»). */
+  multi?: boolean;
   matches: (item: ProductRead | MaterialRead) => boolean;
 }
 
@@ -61,7 +63,9 @@ const RULES: Record<string, RawRule> = {
     kind: "product",
     defaultCategory: PRODUCT_CATEGORY.SPUNBOND,
     defaultSubcategory: SPUNBOND_SUBCATEGORY.BOBBINS,
-    // Простыни делают из любого спанбонда — подкатегорию не фильтруем.
+    // Простыни делают из любого спанбонда — подкатегорию не фильтруем, и можно
+    // указать несколько видов спанбонда (кнопка «Добавить сырьё»).
+    multi: true,
     matches: (p) => norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND),
   },
   [PRODUCT_CATEGORY.DASTARKHAN]: {
@@ -87,6 +91,8 @@ export interface RawSlot {
   kind: RawKind;
   defaultCategory?: string;
   defaultSubcategory?: string;
+  /** Можно добавлять несколько строк сырья в этот слот. */
+  multi?: boolean;
   options: RawOption[];
 }
 
@@ -116,6 +122,7 @@ export function rawSlotsForCategories(
       kind: rule.kind,
       defaultCategory: rule.defaultCategory,
       defaultSubcategory: rule.defaultSubcategory,
+      multi: rule.multi,
       options: pool.filter(rule.matches).map((item) => ({
         value: item.id,
         label: item.name,

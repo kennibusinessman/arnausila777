@@ -52,7 +52,7 @@ const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
 
 type CreateCtx =
   | { kind: "output"; index: number; label: string }
-  | { kind: "raw"; slot: RawSlot; label: string };
+  | { kind: "raw"; slot: RawSlot; index: number; label: string };
 
 export function ShiftReportForm({
   initial,
@@ -68,7 +68,9 @@ export function ShiftReportForm({
   const [comment, setComment] = useState(initial.comment);
   const [downtimeHours, setDowntimeHours] = useState(initial.downtime_hours);
   const [outputs, setOutputs] = useState<OutputIn[]>(initial.outputs);
-  const [rawValues, setRawValues] = useState<Record<string, RawLineState>>({});
+  // Для каждого слота — список строк сырья. У обычных слотов одна строка, у слота
+  // «простыни» (multi) их может быть несколько (кнопка «Добавить сырьё»).
+  const [rawValues, setRawValues] = useState<Record<string, RawLineState[]>>({});
   const [localError, setLocalError] = useState<string | null>(null);
   const [createCtx, setCreateCtx] = useState<CreateCtx | null>(null);
 
@@ -119,14 +121,14 @@ export function ShiftReportForm({
     if (products.length === 0) return;
     const firstOutputId = initial.outputs[0]?.product_id;
     const outputCat = firstOutputId ? categoryOfProduct(firstOutputId, products) : null;
-    const next: Record<string, RawLineState> = {};
+    const next: Record<string, RawLineState[]> = {};
     for (const line of initial.materials) {
       const key = line.material_id ? PRODUCT_CATEGORY.SPUNBOND : outputCat;
       if (!key) continue;
-      next[key] = {
+      (next[key] ??= []).push({
         refId: line.material_id || line.product_id || "",
         quantity: line.quantity_used,
-      };
+      });
     }
     setRawValues(next);
     seededRef.current = true;
@@ -140,15 +142,31 @@ export function ShiftReportForm({
     setRawValues({});
   }
 
-  function updateRaw(slotCategory: string, patch: Partial<RawLineState>) {
-    setRawValues((prev) => ({
-      ...prev,
-      [slotCategory]: {
-        refId: prev[slotCategory]?.refId ?? "",
-        quantity: prev[slotCategory]?.quantity ?? "",
-        ...patch,
-      },
-    }));
+  function updateRaw(category: string, index: number, patch: Partial<RawLineState>) {
+    setRawValues((prev) => {
+      const lines = prev[category] ? [...prev[category]] : [];
+      while (lines.length <= index) lines.push({ refId: "", quantity: "" });
+      const base = lines[index] ?? { refId: "", quantity: "" };
+      lines[index] = {
+        refId: patch.refId ?? base.refId,
+        quantity: patch.quantity ?? base.quantity,
+      };
+      return { ...prev, [category]: lines };
+    });
+  }
+
+  function addRaw(category: string) {
+    setRawValues((prev) => {
+      const lines = prev[category]?.length ? [...prev[category]] : [{ refId: "", quantity: "" }];
+      return { ...prev, [category]: [...lines, { refId: "", quantity: "" }] };
+    });
+  }
+
+  function removeRaw(category: string, index: number) {
+    setRawValues((prev) => {
+      const lines = prev[category] ? prev[category].filter((_, i) => i !== index) : [];
+      return { ...prev, [category]: lines };
+    });
   }
 
   function handleCreated(product: ProductRead) {
@@ -159,7 +177,7 @@ export function ShiftReportForm({
         prev.map((o, i) => (i === index ? { ...o, product_id: product.id } : o))
       );
     } else {
-      updateRaw(createCtx.slot.category, { refId: product.id });
+      updateRaw(createCtx.slot.category, createCtx.index, { refId: product.id });
     }
     setCreateCtx(null);
   }
@@ -167,15 +185,19 @@ export function ShiftReportForm({
   function buildMaterials(): MaterialIn[] {
     const result: MaterialIn[] = [];
     for (const slot of slots) {
-      const state = rawValues[slot.category];
-      const refId = state?.refId || slot.options[0]?.value || "";
-      const quantity = state?.quantity ?? "";
-      if (!refId || !(Number(quantity) > 0)) continue;
-      result.push(
-        slot.kind === "material"
-          ? { material_id: refId, quantity_used: quantity }
-          : { product_id: refId, quantity_used: quantity }
-      );
+      const stored = rawValues[slot.category];
+      const lines = stored && stored.length > 0 ? stored : [{ refId: "", quantity: "" }];
+      lines.forEach((line, i) => {
+        // Первая строка по умолчанию берёт первый вариант (как в RawAutoEditor).
+        const refId = line.refId || (i === 0 ? slot.options[0]?.value : "") || "";
+        const quantity = line.quantity ?? "";
+        if (!refId || !(Number(quantity) > 0)) return;
+        result.push(
+          slot.kind === "material"
+            ? { material_id: refId, quantity_used: quantity }
+            : { product_id: refId, quantity_used: quantity }
+        );
+      });
     }
     return result;
   }
@@ -315,8 +337,14 @@ export function ShiftReportForm({
             slots={slots}
             values={rawValues}
             onChange={updateRaw}
-            onCreateRaw={(slot, label) => setCreateCtx({ kind: "raw", slot, label })}
-            creatingCategory={createCtx?.kind === "raw" ? createCtx.slot.category : null}
+            onAdd={addRaw}
+            onRemove={removeRaw}
+            onCreateRaw={(slot, index, label) => setCreateCtx({ kind: "raw", slot, index, label })}
+            creating={
+              createCtx?.kind === "raw"
+                ? { category: createCtx.slot.category, index: createCtx.index }
+                : null
+            }
           />
         </div>
 

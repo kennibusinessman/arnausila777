@@ -53,6 +53,9 @@ _RAW_TYPES = (WarehouseType.RAW_MATERIALS, WarehouseType.MIXED)
 _FINISHED_TYPES = (WarehouseType.FINISHED_GOODS, WarehouseType.MIXED)
 # Состав можно править только в этих статусах.
 _EDITABLE = {ShiftReportStatus.DRAFT, ShiftReportStatus.REJECTED}
+# Утверждённый отчёт «задним числом» правят только супер-админ и руководитель —
+# с пересчётом склада (реверс прежних движений + повторное применение).
+_CAN_EDIT_APPROVED = {UserRole.SUPER_ADMIN, UserRole.BOSS}
 
 
 def _is_master(actor: User) -> bool:
@@ -283,7 +286,17 @@ async def update_report(
     session: AsyncSession, actor: User, report_id: uuid.UUID, data: ShiftReportUpdate
 ) -> ShiftReport:
     report = await get_full(session, actor, report_id)
-    if report.status not in _EDITABLE:
+    editing_approved = report.status is ShiftReportStatus.APPROVED
+    if editing_approved:
+        if actor.role not in _CAN_EDIT_APPROVED:
+            raise ConflictError(
+                "Утверждённый отчёт может править только супер-админ или руководитель"
+            )
+        # Откатываем склад прежнего утверждения — ниже применим заново по новым данным.
+        await stock_service.reverse_source_movements(
+            session, source_type=SourceType.SHIFT_REPORT, source_id=report.id
+        )
+    elif report.status not in _EDITABLE:
         raise ConflictError("Править можно только черновик или отклонённый отчёт")
 
     payload = data.model_dump(exclude_unset=True)
@@ -298,6 +311,14 @@ async def update_report(
         report.outputs = await _build_outputs(session, data.outputs)
     if data.materials is not None:
         report.materials = await _build_materials(session, data.materials)
+
+    if editing_approved:
+        # Перечитываем состав со связями (unit товара/сырья) и проводим склад заново;
+        # статус остаётся APPROVED. Не хватает остатка под новый состав — 409, откат.
+        await session.flush()
+        fresh = await get_full(session, actor, report.id)
+        raw_wh, finished_wh = await _resolve_report_warehouses(session, fresh, None, None)
+        await _apply_report_stock(session, actor, fresh, raw_wh, finished_wh)
 
     await audit_service.log(
         session,
@@ -354,26 +375,35 @@ async def _resolve_warehouse(
     )
 
 
-async def approve(
-    session: AsyncSession, actor: User, report_id: uuid.UUID, data: ApproveRequest
-) -> ShiftReport:
-    report = await get_full(session, actor, report_id)
-    if report.status is not ShiftReportStatus.SUBMITTED:
-        raise ConflictError("Утвердить можно только отправленный отчёт")
-
-    # Сырьё-материал (Полипропилен) списывается со склада сырья; сырьё-полуфабрикат
-    # (спанбонд) — это готовая продукция, поэтому списывается со склада готовой продукции.
+async def _resolve_report_warehouses(
+    session: AsyncSession,
+    report: ShiftReport,
+    raw_override: uuid.UUID | None,
+    finished_override: uuid.UUID | None,
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+    """Подбирает склады: сырьё-материал (Полипропилен) — со склада сырья; продукция и
+    сырьё-полуфабрикат (спанбонд) — со склада готовой продукции."""
     has_material_raw = any(m.material_id is not None for m in report.materials)
     has_product_raw = any(m.product_id is not None for m in report.materials)
     raw_wh = finished_wh = None
     if has_material_raw:
-        raw_wh = await _resolve_warehouse(session, _RAW_TYPES, data.raw_warehouse_id, "сырья")
+        raw_wh = await _resolve_warehouse(session, _RAW_TYPES, raw_override, "сырья")
     if report.outputs or has_product_raw:
         finished_wh = await _resolve_warehouse(
-            session, _FINISHED_TYPES, data.finished_warehouse_id, "продукции"
+            session, _FINISHED_TYPES, finished_override, "продукции"
         )
+    return raw_wh, finished_wh
 
-    # Порядок: списываем сырьё (проверка достаточности) → приходуем продукцию → брак.
+
+async def _apply_report_stock(
+    session: AsyncSession,
+    actor: User,
+    report: ShiftReport,
+    raw_wh: uuid.UUID | None,
+    finished_wh: uuid.UUID | None,
+) -> None:
+    """Проводит склад по отчёту. Порядок: списываем сырьё (проверка достаточности) →
+    приходуем продукцию → брак."""
     for m in report.materials:
         if m.material_id is not None:
             await stock_service.apply_movement(
@@ -427,6 +457,19 @@ async def approve(
                 product_id=o.product_id,
                 source_id=report.id,
             )
+
+
+
+async def approve(
+    session: AsyncSession, actor: User, report_id: uuid.UUID, data: ApproveRequest
+) -> ShiftReport:
+    report = await get_full(session, actor, report_id)
+    if report.status is not ShiftReportStatus.SUBMITTED:
+        raise ConflictError("Утвердить можно только отправленный отчёт")
+    raw_wh, finished_wh = await _resolve_report_warehouses(
+        session, report, data.raw_warehouse_id, data.finished_warehouse_id
+    )
+    await _apply_report_stock(session, actor, report, raw_wh, finished_wh)
 
     report.status = ShiftReportStatus.APPROVED
     report.approved_by = actor.id

@@ -154,6 +154,17 @@ async def update_order(
     return result
 
 
+@router.put("/{order_id}", response_model=OrderRead)
+async def replace_order(
+    order_id: uuid.UUID, data: OrderCreate, actor: Admin, db: DbSession
+) -> OrderRead:
+    """Полная правка заказа — только супер-админ и руководитель. Меняет состав, цены
+    и шапку даже у давно подтверждённого заказа: склад и долг клиента пересчитываются
+    (старая отгрузка отменяется, создаётся новая). Зав. склад/менеджер сюда не входят."""
+    order = await order_service.replace_order(db, actor, order_id, data)
+    return OrderRead.model_validate(order)
+
+
 @router.patch("/{order_id}/pricing", response_model=OrderRead)
 async def set_order_pricing(
     order_id: uuid.UUID, data: OrderPricing, actor: Pricer, db: DbSession

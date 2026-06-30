@@ -208,6 +208,41 @@ async def delete_movement(
     await session.commit()
 
 
+async def reverse_source_movements(
+    session: AsyncSession, *, source_type: SourceType, source_id: uuid.UUID
+) -> None:
+    """Отменяет эффект всех движений данного источника и удаляет их записи (без commit).
+
+    Применяется при правке уже проведённого документа (утверждённый сменный отчёт,
+    подтверждённый заказ): сначала откатываем старые движения к исходному остатку,
+    затем вызывающий код применяет новые. Если откат увёл бы остаток в минус
+    (приход уже израсходован дальше по цепочке) и ALLOW_NEGATIVE_STOCK выключен —
+    бросаем InsufficientStockError, и вся транзакция правки откатывается."""
+    movements = (
+        await session.execute(
+            select(StockMovement).where(
+                StockMovement.source_type == source_type,
+                StockMovement.source_id == source_id,
+            )
+        )
+    ).scalars().all()
+    for mv in movements:
+        row = await _get_balance_row(
+            session, mv.warehouse_id, mv.item_type, mv.product_id, mv.material_id
+        )
+        current = row.quantity if row is not None else Decimal("0")
+        reversed_quantity = current - mv.quantity * movement_sign(mv.movement_type)
+        if reversed_quantity < 0 and not settings.ALLOW_NEGATIVE_STOCK:
+            raise InsufficientStockError(
+                "Нельзя изменить документ: связанный остаток уже израсходован "
+                "(после отката он ушёл бы в минус)"
+            )
+        if row is not None:
+            row.quantity = reversed_quantity
+        await session.delete(mv)
+    await session.flush()
+
+
 async def recalc_balances(session: AsyncSession) -> int:
     """Пересчитывает кэш остатков из журнала движений. Возвращает число строк."""
     await session.execute(delete(StockBalance))

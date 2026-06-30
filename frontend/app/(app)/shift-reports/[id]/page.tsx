@@ -88,7 +88,11 @@ export default function ShiftReportDetailPage() {
   }
 
   const isOwner = report.master_id === userId;
-  const canEdit = EDITABLE.has(report.status) && (isAdmin || isOwner);
+  // Черновик/отклонённый правит владелец или SA/B; утверждённый — только SA/B
+  // (с пересчётом склада: реверс прежних движений + повторное применение).
+  const canEditDraft = EDITABLE.has(report.status) && (isAdmin || isOwner);
+  const canEditApproved = report.status === ShiftReportStatus.APPROVED && isAdmin;
+  const canEdit = canEditDraft || canEditApproved;
   const m = shiftMetrics(report);
 
   function handleEditSubmit(values: ShiftReportFormValues) {
@@ -193,14 +197,14 @@ export default function ShiftReportDetailPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         {canEdit && !editing && (
-          <>
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-              Редактировать
-            </Button>
-            <Button size="sm" disabled={submitReport.isPending} onClick={handleSubmitReport}>
-              Отправить на утверждение
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            Редактировать
+          </Button>
+        )}
+        {canEditDraft && !editing && (
+          <Button size="sm" disabled={submitReport.isPending} onClick={handleSubmitReport}>
+            Отправить на утверждение
+          </Button>
         )}
         {canApprove && report.status === ShiftReportStatus.SUBMITTED && (
           <>
@@ -262,6 +266,12 @@ export default function ShiftReportDetailPage() {
 
       {editing ? (
         <Card title="Редактирование отчёта">
+          {report.status === ShiftReportStatus.APPROVED && (
+            <p className="mb-3 rounded-lg bg-black/[0.03] px-3 py-2 text-[12.5px] text-muted">
+              Отчёт уже утверждён. Сохранение пересчитает склад: прежнее списание сырья и
+              приход продукции отменятся и применятся заново по новым данным.
+            </p>
+          )}
           <ShiftReportForm
             initial={{
               shift_date: report.shift_date,

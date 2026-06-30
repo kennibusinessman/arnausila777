@@ -347,6 +347,54 @@ async def update_order(
     return await get_full(session, actor, order.id)
 
 
+async def replace_order(
+    session: AsyncSession, actor: User, order_id: uuid.UUID, data: OrderCreate
+) -> Order:
+    """Полная правка заказа (только SA/руководитель): состав, цены и шапка — с
+    пересчётом склада и долга. Прежняя отгрузка отменяется (RETURN_IN, товар назад
+    на склад), по новому составу создаётся новая (SALE_OUT). Атомарно: если под новый
+    состав не хватает остатка — InsufficientStockError (409), заказ не меняется.
+    Долг клиента считается по отгрузкам, поэтому пересчитывается автоматически."""
+    order = await get_full(session, actor, order_id)
+    await _resolve_client(session, actor, data.client_id)
+
+    now = datetime.now(timezone.utc)
+    # 1) Откатываем склад прежней отгрузки и помечаем её удалённой.
+    for shipment in order.shipments:
+        if shipment.deleted_at is not None:
+            continue
+        await shipment_service.reverse_shipment_stock(session, actor, shipment)
+        shipment.deleted_at = now
+
+    # 2) Новый состав/цены и шапка.
+    items, total, products_by_id = await _build_items(session, data.items)
+    order.client_id = data.client_id
+    order.manager_id = data.manager_id
+    order.deadline = data.deadline
+    order.comment = data.comment
+    order.items = items
+    order.total_amount = total
+    await session.flush()
+
+    # 3) Новая отгрузка: проверка остатка под новый состав + списание (SALE_OUT).
+    warehouse = await _resolve_finished_warehouse(session)
+    shipment_date = data.deadline or now.date()
+    shipment = await shipment_service.create_shipment_for_order(
+        session, actor, order, warehouse.id, shipment_date, data.comment, products_by_id
+    )
+
+    await audit_service.log(
+        session,
+        user_id=actor.id,
+        action="UPDATE_ORDER",
+        entity_type="Order",
+        entity_id=order.id,
+        new={"total_amount": str(total), "shipment_number": shipment.shipment_number},
+    )
+    await session.commit()
+    return await get_full(session, actor, order.id)
+
+
 async def price_order(
     session: AsyncSession, actor: User, order_id: uuid.UUID, data: OrderPricing
 ) -> Order:

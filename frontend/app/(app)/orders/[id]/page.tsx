@@ -9,7 +9,13 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Spinner } from "@/components/ui/Spinner";
 import { OrderForm, type OrderFormValues } from "@/components/orders/OrderForm";
 import { useAuthStore } from "@/lib/auth/store";
-import { useDeleteOrder, useOrder, usePriceOrder, useUpdateOrder } from "@/lib/hooks/useOrders";
+import {
+  useDeleteOrder,
+  useOrder,
+  usePriceOrder,
+  useReplaceOrder,
+  useUpdateOrder,
+} from "@/lib/hooks/useOrders";
 import { useShipmentsList } from "@/lib/hooks/useShipments";
 import { apiErrorMessage } from "@/lib/api/http";
 import { UserRole } from "@/lib/types/enums";
@@ -146,6 +152,7 @@ export default function OrderDetailPage() {
 
   const { data: order, isLoading, isError, error } = useOrder(orderId);
   const updateOrder = useUpdateOrder(orderId);
+  const replaceOrder = useReplaceOrder(orderId);
   const deleteOrder = useDeleteOrder();
 
   const [editing, setEditing] = useState(false);
@@ -169,7 +176,29 @@ export default function OrderDetailPage() {
 
   function handleEditSubmit(values: OrderFormValues) {
     setActionError(null);
-    // Правим только шапку — состав уже списан со склада и не меняется.
+    if (isAdmin) {
+      // Полная правка (SA/руководитель): состав + цены — склад и долг пересчитываются.
+      replaceOrder.mutate(
+        {
+          client_id: values.client_id,
+          deadline: values.deadline || null,
+          comment: values.comment || null,
+          manager_id: values.manager_id,
+          items: values.items.map((it) => ({
+            product_id: it.product_id,
+            quantity: it.quantity,
+            unit_price: it.unit_price ?? null,
+            comment: it.comment ?? null,
+          })),
+        },
+        {
+          onSuccess: () => setEditing(false),
+          onError: (err) => setActionError(apiErrorMessage(err, "Не удалось сохранить заказ")),
+        }
+      );
+      return;
+    }
+    // Менеджер по продажам правит только шапку — состав уже списан со склада.
     updateOrder.mutate(
       {
         client_id: values.client_id,
@@ -269,6 +298,12 @@ export default function OrderDetailPage() {
 
       {editing ? (
         <Card title="Редактирование заказа">
+          {isAdmin && (
+            <p className="mb-3 rounded-lg bg-black/[0.03] px-3 py-2 text-[12.5px] text-muted">
+              Изменение состава или цен пересчитает склад, отгрузку и долг клиента
+              автоматически.
+            </p>
+          )}
           <OrderForm
             initial={{
               client_id: order.client_id,
@@ -283,9 +318,9 @@ export default function OrderDetailPage() {
               })),
             }}
             isAdmin={isAdmin}
-            headerOnly
+            headerOnly={!isAdmin}
             submitLabel="Сохранить изменения"
-            submitting={updateOrder.isPending}
+            submitting={isAdmin ? replaceOrder.isPending : updateOrder.isPending}
             onSubmit={handleEditSubmit}
             onCancel={() => setEditing(false)}
           />

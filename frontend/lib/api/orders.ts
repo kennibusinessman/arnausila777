@@ -36,6 +36,10 @@ export const getOrder = (orderId: string) => http.get<OrderRead>(`/orders/${orde
 export const updateOrder = (orderId: string, data: OrderUpdate) =>
   http.patch<OrderRead>(`/orders/${orderId}`, data);
 
+/** Полная правка заказа (SA/руководитель): состав + цены, с пересчётом склада и долга. */
+export const replaceOrder = (orderId: string, data: OrderCreate) =>
+  http.put<OrderRead>(`/orders/${orderId}`, data);
+
 export const setOrderPricing = (orderId: string, data: OrderPricing) =>
   http.patch<OrderRead>(`/orders/${orderId}/pricing`, data);
 

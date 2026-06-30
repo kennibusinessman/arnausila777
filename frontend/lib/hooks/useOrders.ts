@@ -5,6 +5,7 @@ import {
   getOrder,
   getOrdersSummary,
   listOrders,
+  replaceOrder,
   setOrderPricing,
   updateOrder,
   type ListOrdersParams,
@@ -68,6 +69,20 @@ export function useUpdateOrder(orderId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["order", orderId] });
+    },
+  });
+}
+
+/** Полная правка заказа (SA/руководитель): меняет состав/цены — пересчитывает склад,
+ * отгрузку и долг, поэтому обновляем те же срезы, что и при создании. */
+export function useReplaceOrder(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: OrderCreate) => replaceOrder(orderId, data).then((r) => r.data),
+    onSuccess: () => {
+      invalidateOrderEffects(qc);
+      qc.invalidateQueries({ queryKey: ["order", orderId] });
+      qc.invalidateQueries({ queryKey: ["orders-summary"] });
     },
   });
 }

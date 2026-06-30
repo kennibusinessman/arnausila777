@@ -39,6 +39,9 @@ function useInvalidateShiftReports(reportId?: string) {
   return () => {
     qc.invalidateQueries({ queryKey: ["shift-reports"] });
     if (reportId) qc.invalidateQueries({ queryKey: ["shift-report", reportId] });
+    // Утверждение и правка утверждённого отчёта меняют склад — обновляем остатки.
+    qc.invalidateQueries({ queryKey: ["stock-balances"] });
+    qc.invalidateQueries({ queryKey: ["stock-movements"] });
   };
 }
 
