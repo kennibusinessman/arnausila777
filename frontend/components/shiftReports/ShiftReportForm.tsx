@@ -53,6 +53,13 @@ const inputClass =
 
 const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
 
+// Сколько этикеток печатать на позицию — по «Выпуску» (10 шт → 10 этикеток),
+// минимум 1, с потолком 500, чтобы опечатка не отправила тысячи страниц на печать.
+function labelsForOutput(quantity: string): number {
+  const n = Math.round(Number(quantity) || 0);
+  return Math.min(500, Math.max(1, n));
+}
+
 type CreateCtx =
   | { kind: "output"; index: number; label: string }
   | { kind: "raw"; slot: RawSlot; index: number; label: string };
@@ -246,19 +253,26 @@ export function ShiftReportForm({
     }
     const productionDate = formatDate(shiftDate);
     const printTime = formatDateTime(new Date().toISOString());
-    const labels = labelable.map((o) => ({
-      name: products.find((p) => p.id === o.product_id)?.name ?? "—",
-      weight: (o.weight ?? "").trim(),
-      productionDate,
-      responsible: responsibleName,
-      printTime,
-    }));
+    // На каждую позицию — столько этикеток, сколько указано в «Выпуске».
+    const labels = labelable.flatMap((o) => {
+      const one = {
+        name: products.find((p) => p.id === o.product_id)?.name ?? "—",
+        weight: (o.weight ?? "").trim(),
+        productionDate,
+        responsible: responsibleName,
+        printTime,
+      };
+      return Array.from({ length: labelsForOutput(o.quantity) }, () => one);
+    });
     if (!printShiftLabels(labels)) {
       setLabelError("Браузер заблокировал окно печати — разрешите всплывающие окна для сайта.");
     }
   }
 
-  const labelCount = outputs.filter((o) => o.product_id).length;
+  const labelCount = outputs.reduce(
+    (sum, o) => (o.product_id ? sum + labelsForOutput(o.quantity) : sum),
+    0
+  );
 
   return (
     <>

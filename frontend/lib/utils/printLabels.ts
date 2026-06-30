@@ -3,6 +3,10 @@
  * и сам вызывает печать: в диалоге пользователь выбирает «Сохранить как PDF» или сразу
  * термопринтер этикеток. Кириллица берётся из системных шрифтов (поэтому окно печати,
  * а не jsPDF — там кириллица требует встраивания шрифтов).
+ *
+ * Разрыв страницы ставится ПЕРЕД каждой этикеткой, кроме первой (а не после) — иначе
+ * после последней этикетки печаталась лишняя пустая страница, а переполнение вызывало
+ * «подгонку под лист» и этикетка выходила чуть меньше 75×125.
  */
 export interface ShiftLabel {
   /** Наименование продукции — печатается крупно, заглавными. */
@@ -29,33 +33,31 @@ export function printShiftLabels(labels: ShiftLabel[]): boolean {
   const row = (k: string, v: string) =>
     `<div class="row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v) || "—"}</span></div>`;
 
+  // join("") — без пробелов/переносов между этикетками, чтобы не появлялась лишняя страница.
   const body = labels
     .map(
-      (l) => `
-      <div class="label">
-        <div class="name">${escapeHtml(l.name)}</div>
-        <div class="rows">
-          ${row("Вес", l.weight ? `${l.weight} кг` : "")}
-          ${row("Дата производства", l.productionDate)}
-          ${row("Ответственный", l.responsible)}
-          ${row("Время печати", l.printTime)}
-        </div>
-      </div>`
+      (l) =>
+        `<div class="label"><div class="name">${escapeHtml(l.name)}</div><div class="rows">` +
+        row("Вес", l.weight ? `${l.weight} кг` : "") +
+        row("Дата производства", l.productionDate) +
+        row("Ответственный", l.responsible) +
+        row("Время печати", l.printTime) +
+        `</div></div>`
     )
     .join("");
 
   win.document.write(
     `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетки</title><style>
       @page { size: 75mm 125mm; margin: 0; }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 75mm; background: #fff; }
       body { font-family: Arial, "Segoe UI", "Helvetica Neue", sans-serif; color: #000; }
       .label {
         width: 75mm; height: 125mm; padding: 6mm 5mm;
-        display: flex; flex-direction: column;
-        page-break-after: always; overflow: hidden;
+        display: flex; flex-direction: column; overflow: hidden;
+        break-before: page; page-break-before: always;
       }
-      .label:last-child { page-break-after: auto; }
+      .label:first-child { break-before: avoid; page-break-before: avoid; }
       .name {
         font-size: 30pt; font-weight: 800; line-height: 1.04;
         text-transform: uppercase; word-break: break-word;
@@ -65,11 +67,12 @@ export function printShiftLabels(labels: ShiftLabel[]): boolean {
       .row { display: flex; flex-direction: column; }
       .k { font-size: 9pt; color: #444; text-transform: uppercase; letter-spacing: .04em; }
       .v { font-size: 16pt; font-weight: 700; line-height: 1.15; }
-    </style></head><body>${body}
-    <script>
-      setTimeout(function () { window.focus(); window.print(); }, 250);
-      window.onafterprint = function () { window.close(); };
-    <\/script></body></html>`
+    </style><script>
+      window.addEventListener("load", function () {
+        setTimeout(function () { window.focus(); window.print(); }, 200);
+        window.onafterprint = function () { window.close(); };
+      });
+    <\/script></head><body>${body}</body></html>`
   );
   win.document.close();
   return true;
