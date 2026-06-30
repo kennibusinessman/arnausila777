@@ -5,9 +5,15 @@ import { Combobox } from "@/components/ui/Combobox";
 import type { OutputIn } from "@/lib/types/shiftReport";
 import type { ProductRead } from "@/lib/types/product";
 
+/** Строка выпуска + вес для этикетки. Вес — UI-only (на backend не отправляется),
+ * нужен только для печати этикеток (может отличаться для одного наименования). */
+export interface OutputRow extends OutputIn {
+  weight?: string;
+}
+
 interface OutputsEditorProps {
-  items: OutputIn[];
-  onChange: (items: OutputIn[]) => void;
+  items: OutputRow[];
+  onChange: (items: OutputRow[]) => void;
   products: ProductRead[];
   disabled?: boolean;
   /** Открывает второе поп-ап для создания товара, которого нет в справочнике. */
@@ -38,14 +44,14 @@ export function OutputsEditor({
     sublabel: p.category ?? p.unit,
   }));
 
-  function update(index: number, patch: Partial<OutputIn>) {
+  function update(index: number, patch: Partial<OutputRow>) {
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }
   function remove(index: number) {
     onChange(items.filter((_, i) => i !== index));
   }
   function add() {
-    onChange([...items, { product_id: "", quantity: "1", defect_quantity: "0" }]);
+    onChange([...items, { product_id: "", quantity: "1", defect_quantity: "0", weight: "" }]);
   }
 
   return (
@@ -83,7 +89,7 @@ export function OutputsEditor({
                   ×
                 </button>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2.5">
+              <div className="mt-2 grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-muted">
                     Выпуск{unit ? `, ${unit}` : ""}
@@ -109,6 +115,21 @@ export function OutputsEditor({
                     value={item.defect_quantity ?? "0"}
                     onChange={(e) => update(idx, { defect_quantity: e.target.value })}
                     disabled={disabled}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-muted">
+                    Вес, кг
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={item.weight ?? ""}
+                    onChange={(e) => update(idx, { weight: e.target.value })}
+                    disabled={disabled}
+                    placeholder="напр. 23.5"
                     className={inputClass}
                   />
                 </div>

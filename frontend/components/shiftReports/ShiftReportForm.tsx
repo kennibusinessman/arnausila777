@@ -5,13 +5,16 @@ import { Moon, Sun } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { CreateProductModal } from "@/components/shiftReports/CreateProductModal";
-import { OutputsEditor } from "@/components/shiftReports/OutputsEditor";
+import { OutputsEditor, type OutputRow } from "@/components/shiftReports/OutputsEditor";
 import { RawAutoEditor, type RawLineState } from "@/components/shiftReports/RawAutoEditor";
+import { useAuthStore } from "@/lib/auth/store";
 import { useMaterialOptions } from "@/lib/hooks/useMaterials";
 import { useProductOptions } from "@/lib/hooks/useProducts";
 import { ShiftType } from "@/lib/types/enums";
 import type { ProductRead } from "@/lib/types/product";
 import type { MaterialIn, OutputIn } from "@/lib/types/shiftReport";
+import { formatDate, formatDateTime } from "@/lib/utils/format";
+import { printShiftLabels } from "@/lib/utils/printLabels";
 import { SHIFT_TYPE_LABELS } from "@/lib/utils/shiftLabels";
 import {
   CATEGORY_COLOR,
@@ -67,12 +70,16 @@ export function ShiftReportForm({
   const [category, setCategory] = useState<string>(PRODUCT_CATEGORY.SPUNBOND);
   const [comment, setComment] = useState(initial.comment);
   const [downtimeHours, setDowntimeHours] = useState(initial.downtime_hours);
-  const [outputs, setOutputs] = useState<OutputIn[]>(initial.outputs);
+  const [outputs, setOutputs] = useState<OutputRow[]>(initial.outputs);
   // Для каждого слота — список строк сырья. У обычных слотов одна строка, у слота
   // «простыни» (multi) их может быть несколько (кнопка «Добавить сырьё»).
   const [rawValues, setRawValues] = useState<Record<string, RawLineState[]>>({});
   const [localError, setLocalError] = useState<string | null>(null);
+  const [labelError, setLabelError] = useState<string | null>(null);
   const [createCtx, setCreateCtx] = useState<CreateCtx | null>(null);
+
+  // Ответственный на этикетке — текущий мастер смены (тот, кто заполняет отчёт).
+  const responsibleName = useAuthStore((s) => s.user?.full_name) ?? "—";
 
   const productsQuery = useProductOptions();
   const materialsQuery = useMaterialOptions();
@@ -219,10 +226,39 @@ export function ShiftReportForm({
       shift_type: shiftType,
       comment,
       downtime_hours: downtimeHours === "" ? "0" : downtimeHours,
-      outputs: validOutputs,
+      // Вес — только для этикеток, на backend не отправляем.
+      outputs: validOutputs.map((o) => ({
+        product_id: o.product_id,
+        quantity: o.quantity,
+        defect_quantity: o.defect_quantity,
+        comment: o.comment,
+      })),
       materials: buildMaterials(),
     });
   }
+
+  function handlePrintLabels() {
+    setLabelError(null);
+    const labelable = outputs.filter((o) => o.product_id);
+    if (labelable.length === 0) {
+      setLabelError("Сначала добавьте продукцию — этикетка печатается на каждую позицию.");
+      return;
+    }
+    const productionDate = formatDate(shiftDate);
+    const printTime = formatDateTime(new Date().toISOString());
+    const labels = labelable.map((o) => ({
+      name: products.find((p) => p.id === o.product_id)?.name ?? "—",
+      weight: (o.weight ?? "").trim(),
+      productionDate,
+      responsible: responsibleName,
+      printTime,
+    }));
+    if (!printShiftLabels(labels)) {
+      setLabelError("Браузер заблокировал окно печати — разрешите всплывающие окна для сайта.");
+    }
+  }
+
+  const labelCount = outputs.filter((o) => o.product_id).length;
 
   return (
     <>
@@ -327,6 +363,23 @@ export function ShiftReportForm({
             onCreateProduct={(label, index) => setCreateCtx({ kind: "output", index, label })}
             creatingIndex={createCtx?.kind === "output" ? createCtx.index : null}
           />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handlePrintLabels}
+              disabled={labelCount === 0}
+            >
+              Печать этикеток{labelCount > 0 ? ` · ${labelCount}` : ""}
+            </Button>
+            <span className="text-[12px] text-muted">
+              Этикетка 75×125 мм на каждую позицию (PDF/принтер). Заполните вес.
+            </span>
+          </div>
+          {labelError && (
+            <p className="mt-1.5 rounded-lg bg-danger-bg px-3 py-2 text-[13px] text-danger">{labelError}</p>
+          )}
         </div>
 
         <div>
