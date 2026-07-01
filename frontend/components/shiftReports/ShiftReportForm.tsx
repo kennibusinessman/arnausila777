@@ -376,6 +376,8 @@ export function ShiftReportForm({
             products={categoryProducts}
             onCreateProduct={(label, index) => setCreateCtx({ kind: "output", index, label })}
             creatingIndex={createCtx?.kind === "output" ? createCtx.index : null}
+            // Для одноразовых простыней вес не нужен — поле скрываем.
+            showWeight={norm(category) !== norm(PRODUCT_CATEGORY.SHEETS)}
           />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button

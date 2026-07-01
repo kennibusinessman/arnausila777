@@ -34,11 +34,12 @@ export function printShiftLabels(labels: ShiftLabel[]): boolean {
     `<div class="row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(v) || "—"}</span></div>`;
 
   // join("") — без пробелов/переносов между этикетками, чтобы не появлялась лишняя страница.
+  // Строку «Вес» показываем только если вес задан (для простыней веса нет — строки не будет).
   const body = labels
     .map(
       (l) =>
         `<div class="label"><div class="name">${escapeHtml(l.name)}</div><div class="rows">` +
-        row("Вес", l.weight ? `${l.weight} кг` : "") +
+        (l.weight ? row("Вес", `${l.weight} кг`) : "") +
         row("Дата производства", l.productionDate) +
         row("Ответственный", l.responsible) +
         row("Время печати", l.printTime) +

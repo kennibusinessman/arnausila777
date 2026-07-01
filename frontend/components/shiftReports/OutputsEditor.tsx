@@ -20,6 +20,8 @@ interface OutputsEditorProps {
   onCreateProduct?: (label: string, rowIndex: number) => void;
   /** Индекс строки, для которой сейчас создаётся товар (показывает «Создание…»). */
   creatingIndex?: number | null;
+  /** Показывать поле «Вес, кг» для этикетки. Для простыней скрыто — вес там не нужен. */
+  showWeight?: boolean;
 }
 
 const inputClass =
@@ -37,6 +39,7 @@ export function OutputsEditor({
   disabled,
   onCreateProduct,
   creatingIndex,
+  showWeight = true,
 }: OutputsEditorProps) {
   const options = products.map((p) => ({
     value: p.id,
@@ -89,7 +92,7 @@ export function OutputsEditor({
                   ×
                 </button>
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2.5">
+              <div className={`mt-2 grid gap-2.5 ${showWeight ? "grid-cols-3" : "grid-cols-2"}`}>
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-muted">
                     Выпуск{unit ? `, ${unit}` : ""}
@@ -118,21 +121,23 @@ export function OutputsEditor({
                     className={inputClass}
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-[11px] font-semibold text-muted">
-                    Вес, кг
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={item.weight ?? ""}
-                    onChange={(e) => update(idx, { weight: e.target.value })}
-                    disabled={disabled}
-                    placeholder="напр. 23.5"
-                    className={inputClass}
-                  />
-                </div>
+                {showWeight && (
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold text-muted">
+                      Вес, кг
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={item.weight ?? ""}
+                      onChange={(e) => update(idx, { weight: e.target.value })}
+                      disabled={disabled}
+                      placeholder="напр. 23.5"
+                      className={inputClass}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );
