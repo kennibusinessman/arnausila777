@@ -17,6 +17,18 @@ function toKg(quantity: string, product?: OutputRead["product"]): number {
   return 0;
 }
 
+/**
+ * Вес израсходованного сырья в кг.
+ * Обычное сырьё (Полипропилен) уже указано в кг → quantity_used.
+ * Полуфабрикат-бабины считаются в штуках → количество × вес бабины (base_weight).
+ */
+function materialKg(m: ShiftMaterialRead): number {
+  const q = Number(m.quantity_used) || 0;
+  const bw = Number(m.product?.base_weight ?? 0);
+  if (bw > 0) return q * bw;
+  return q;
+}
+
 export interface ShiftMetrics {
   /** Σ количества выпуска (штук/рулонов). */
   producedUnits: number;
@@ -42,7 +54,7 @@ export function shiftMetrics(r: ShiftMetricsInput): ShiftMetrics {
     producedKg += toKg(o.quantity, o.product);
     defectKg += toKg(o.defect_quantity, o.product);
   }
-  const rawKg = r.materials.reduce((s, m) => s + (Number(m.quantity_used) || 0), 0);
+  const rawKg = r.materials.reduce((s, m) => s + materialKg(m), 0);
   const netKg = producedKg - defectKg;
   const yieldPct = rawKg > 0 ? (netKg / rawKg) * 100 : null;
   return { producedUnits, producedKg, defectKg, netKg, rawKg, yieldPct };
