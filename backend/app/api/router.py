@@ -14,6 +14,7 @@ from app.api.routes import (
     payments,
     products,
     reports,
+    settings,
     shift_reports,
     shipments,
     stock,
@@ -36,4 +37,5 @@ api_router.include_router(expenses.router)
 api_router.include_router(shipments.router)
 api_router.include_router(payments.router)
 api_router.include_router(reports.router)
+api_router.include_router(settings.router)
 api_router.include_router(audit_logs.router)

@@ -16,14 +16,20 @@ export function formatCompactCurrency(value: string | number): string {
   return formatCurrency(num);
 }
 
-/** Вес в кг — "77,5 кг" до тонны, дальше "8,4 т" (см. Product.base_weight). */
+/** Вес всегда в килограммах — "77,5 кг", "8 400 кг" (тонны не используем; см. Product.base_weight). */
 export function formatWeight(value: string | number): string {
   const num = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(num)) return "—";
-  if (num >= 1000) {
-    return `${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(num / 1000)} т`;
-  }
   return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(num)} кг`;
+}
+
+/** Процент — "40 %", "12,5 %". null/нечисло → "—". */
+export function formatPercent(value: number | null, fractionDigits = 0): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)} %`;
 }
 
 export function formatNumber(value: string | number, fractionDigits = 0): string {

@@ -4,6 +4,7 @@ import {
   ArrowUpDown,
   CalendarDays,
   ChevronRight,
+  PiggyBank,
   Search,
   ShoppingCart,
   TrendingUp,
@@ -22,10 +23,12 @@ import { Spinner } from "@/components/ui/Spinner";
 import { CreateOrderModal } from "@/components/orders/CreateOrderModal";
 import { useAuthStore } from "@/lib/auth/store";
 import { useOrdersList, useOrdersSummary } from "@/lib/hooks/useOrders";
+import { useSettings } from "@/lib/hooks/useSettings";
 import { UserRole } from "@/lib/types/enums";
 import type { OrderListItem } from "@/lib/types/order";
 import { apiErrorMessage } from "@/lib/api/http";
-import { formatCurrency, formatDate, formatNumber, formatWeight } from "@/lib/utils/format";
+import { formatCurrency, formatDate, formatNumber, formatPercent, formatWeight } from "@/lib/utils/format";
+import { DEFAULT_RAW_PRICE_PER_KG, orderEconomics } from "@/lib/utils/orderEconomics";
 
 const AVATAR_GRADIENTS = [
   "linear-gradient(140deg,#f3a78b,#e87aa6)",
@@ -116,13 +119,16 @@ function OrderDetailModal({
   order,
   onClose,
   hideMoney,
+  rawPrice,
 }: {
   order: OrderListItem | null;
   onClose: () => void;
   hideMoney?: boolean;
+  rawPrice: number;
 }) {
   if (!order) return null;
   const name = order.client?.name ?? "—";
+  const eco = orderEconomics(Number(order.total_amount), Number(order.total_weight), rawPrice);
   return (
     <Modal open title={`Заказ ${order.order_number}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
@@ -178,12 +184,26 @@ function OrderDetailModal({
         </div>
 
         {!hideMoney && (
-          <div className="flex items-center justify-between rounded-2xl bg-primary-50 px-4 py-3">
-            <span className="text-[13px] font-semibold text-muted">Итого</span>
-            <span className="text-[19px] font-bold tabular-nums text-text">
-              {formatCurrency(order.total_amount)}
-            </span>
-          </div>
+          <>
+            <div className="flex items-center justify-between rounded-2xl bg-primary-50 px-4 py-3">
+              <span className="text-[13px] font-semibold text-muted">Итого</span>
+              <span className="text-[19px] font-bold tabular-nums text-text">
+                {formatCurrency(order.total_amount)}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              <Field label="Себестоимость" value={formatCurrency(eco.rawCost)} />
+              <Field
+                label="Чистая прибыль"
+                value={
+                  <span className={eco.netProfit >= 0 ? "text-success" : "text-danger"}>
+                    {formatCurrency(eco.netProfit)}
+                  </span>
+                }
+              />
+              <Field label="Рентабельность" value={formatPercent(eco.profitability)} />
+            </div>
+          </>
         )}
 
         <Link
@@ -223,6 +243,8 @@ export default function OrdersPage() {
     ...filters,
   });
   const summary = useOrdersSummary(filters);
+  const settings = useSettings();
+  const rawPrice = Number(settings.data?.raw_price_per_kg ?? DEFAULT_RAW_PRICE_PER_KG);
 
   function resetPage() {
     setPage(1);
@@ -232,6 +254,12 @@ export default function OrdersPage() {
     summary.data && summary.data.count > 0
       ? Number(summary.data.total_amount) / summary.data.count
       : 0;
+
+  // Прибыль за период: выручка − себестоимость сырья (1 кг сырья = 1 кг продукции).
+  const periodProfit = summary.data
+    ? orderEconomics(Number(summary.data.total_amount), Number(summary.data.total_weight), rawPrice)
+        .netProfit
+    : 0;
 
   const columns: DataTableColumn<OrderListItem>[] = [
     {
@@ -443,6 +471,12 @@ export default function OrdersPage() {
               tone="primary"
               icon={Wallet}
             />
+            <KpiCard
+              label="Чистая прибыль"
+              value={summary.data ? formatCurrency(periodProfit) : "—"}
+              tone={periodProfit >= 0 ? "success" : "danger"}
+              icon={PiggyBank}
+            />
           </>
         )}
       </div>
@@ -499,7 +533,12 @@ export default function OrdersPage() {
         onCreated={(orderId) => router.push(`/orders/${orderId}`)}
       />
 
-      <OrderDetailModal order={selected} onClose={() => setSelected(null)} hideMoney={hideMoney} />
+      <OrderDetailModal
+        order={selected}
+        onClose={() => setSelected(null)}
+        hideMoney={hideMoney}
+        rawPrice={rawPrice}
+      />
     </div>
   );
 }

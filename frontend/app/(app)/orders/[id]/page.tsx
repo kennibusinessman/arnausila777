@@ -17,10 +17,12 @@ import {
   useUpdateOrder,
 } from "@/lib/hooks/useOrders";
 import { useShipmentsList } from "@/lib/hooks/useShipments";
+import { useSettings } from "@/lib/hooks/useSettings";
 import { apiErrorMessage } from "@/lib/api/http";
 import { UserRole } from "@/lib/types/enums";
 import type { OrderItemRead, OrderRead } from "@/lib/types/order";
-import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils/format";
+import { formatCurrency, formatDate, formatDateTime, formatPercent, formatWeight } from "@/lib/utils/format";
+import { DEFAULT_RAW_PRICE_PER_KG, orderEconomics, orderItemsWeight } from "@/lib/utils/orderEconomics";
 
 /** Колонки позиций: зав. складом денег не видит — без «Цена»/«Сумма». */
 function itemColumnsFor(hideMoney: boolean): DataTableColumn<OrderItemRead>[] {
@@ -72,6 +74,43 @@ function ShipmentSection({ order }: { order: OrderRead }) {
       ) : (
         <p className="text-sm text-muted">Отгрузка по заказу не найдена.</p>
       )}
+    </Card>
+  );
+}
+
+/** Экономика заказа по сырью: себестоимость и чистая прибыль (1 кг сырья = 1 кг продукции). */
+function OrderEconomicsCard({ order }: { order: OrderRead }) {
+  const { data: settings } = useSettings();
+  const rawPrice = Number(settings?.raw_price_per_kg ?? DEFAULT_RAW_PRICE_PER_KG);
+  const eco = orderEconomics(Number(order.total_amount), orderItemsWeight(order.items), rawPrice);
+
+  const cells: { label: string; value: string; tone?: string }[] = [
+    { label: "Вес / сырьё", value: formatWeight(eco.weightKg) },
+    { label: "Себестоимость", value: formatCurrency(eco.rawCost) },
+    {
+      label: "Чистая прибыль",
+      value: formatCurrency(eco.netProfit),
+      tone: eco.netProfit >= 0 ? "text-success" : "text-danger",
+    },
+    { label: "Рентабельность", value: formatPercent(eco.profitability) },
+  ];
+
+  return (
+    <Card title="Экономика заказа">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {cells.map((c) => (
+          <div key={c.label}>
+            <div className="text-xs font-semibold text-muted">{c.label}</div>
+            <div className={`mt-0.5 text-[17px] font-bold tabular-nums ${c.tone ?? "text-text"}`}>
+              {c.value}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted">
+        Сырьё (ПП) по {formatCurrency(rawPrice)}/кг · 1 кг сырья = 1 кг готовой продукции.
+        Цена меняется в разделе «Настройки».
+      </p>
     </Card>
   );
 }
@@ -293,6 +332,8 @@ export default function OrderDetailPage() {
       </div>
 
       {!hideMoney && <ShipmentSection order={order} />}
+
+      {!hideMoney && !editing && <OrderEconomicsCard order={order} />}
 
       {canPrice && !editing && Number(order.total_amount) === 0 && <PricingCard order={order} />}
 

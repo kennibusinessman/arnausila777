@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Package,
   Receipt,
+  SlidersHorizontal,
   ShoppingCart,
   UserCog,
   Users,
@@ -62,4 +63,5 @@ export const navItems: NavItem[] = [
   },
   { href: "/users", label: "Пользователи", icon: UserCog, roles: [SUPER_ADMIN, BOSS] },
   { href: "/audit-logs", label: "Журнал аудита", icon: History, roles: [SUPER_ADMIN, BOSS] },
+  { href: "/settings", label: "Настройки", icon: SlidersHorizontal, roles: [SUPER_ADMIN, BOSS] },
 ];
