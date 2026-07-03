@@ -270,6 +270,7 @@ def _list_conditions(
     deadline_from: date | None = None,
     deadline_to: date | None = None,
     search: str | None = None,
+    in_expenses: bool | None = None,
 ) -> list[ColumnElement[bool]]:
     """Общие условия фильтрации для списка и агрегатов периода (§OrderSummary)."""
     conditions: list[ColumnElement[bool]] = [Order.deleted_at.is_(None), *_scope(actor)]
@@ -289,6 +290,14 @@ def _list_conditions(
         conditions.append(
             Order.client_id.in_(select(Client.id).where(Client.name.ilike(f"%{search.strip()}%")))
         )
+    if in_expenses is not None:
+        # «Занесён в расходы» = есть неудалённый авто-расход сырья по этому заказу.
+        has_expense = (
+            select(Expense.id)
+            .where(Expense.order_id == Order.id, Expense.deleted_at.is_(None))
+            .exists()
+        )
+        conditions.append(has_expense if in_expenses else ~has_expense)
     return conditions
 
 
@@ -304,6 +313,7 @@ async def list_orders(
     deadline_from: date | None = None,
     deadline_to: date | None = None,
     search: str | None = None,
+    in_expenses: bool | None = None,
     sort: str = "desc",
 ) -> tuple[list[Order], int]:
     conditions = _list_conditions(
@@ -315,6 +325,7 @@ async def list_orders(
         deadline_from=deadline_from,
         deadline_to=deadline_to,
         search=search,
+        in_expenses=in_expenses,
     )
 
     total = (
@@ -336,6 +347,22 @@ async def list_orders(
             .limit(params.limit)
         )
     ).scalars().all()
+
+    # Флаг «занесён в расходы» на каждую строку: есть ли неудалённый авто-расход сырья.
+    if items:
+        expensed = set(
+            (
+                await session.execute(
+                    select(Expense.order_id).where(
+                        Expense.order_id.in_([o.id for o in items]),
+                        Expense.deleted_at.is_(None),
+                    )
+                )
+            ).scalars()
+        )
+        for o in items:
+            o.has_expense = o.id in expensed
+
     return list(items), total
 
 
@@ -350,6 +377,7 @@ async def get_summary(
     deadline_from: date | None = None,
     deadline_to: date | None = None,
     search: str | None = None,
+    in_expenses: bool | None = None,
 ) -> OrderSummary:
     """Агрегаты count/сумма/позиции по тем же фильтрам, что и список — без пагинации."""
     conditions = _list_conditions(
@@ -361,6 +389,7 @@ async def get_summary(
         deadline_from=deadline_from,
         deadline_to=deadline_to,
         search=search,
+        in_expenses=in_expenses,
     )
 
     count, total_amount = (

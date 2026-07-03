@@ -17,6 +17,8 @@ export interface OrderFilterParams {
   deadline_from?: string;
   deadline_to?: string;
   search?: string;
+  /** true — только с авто-расходом сырья; false — только без; undefined — все. */
+  in_expenses?: boolean;
 }
 
 export interface ListOrdersParams extends Partial<PageParams>, OrderFilterParams {

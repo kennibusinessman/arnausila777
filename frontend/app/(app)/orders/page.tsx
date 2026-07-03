@@ -1,5 +1,6 @@
 "use client";
 
+import { clsx } from "clsx";
 import {
   ArrowUpDown,
   CalendarDays,
@@ -57,6 +58,19 @@ function initialsOf(name: string) {
 
 const PAGE_SIZE = 20;
 
+/** Бейдж «занесён ли заказ в расходы» (авто-расход себестоимости сырья). */
+function ExpenseBadge({ has }: { has: boolean }) {
+  return has ? (
+    <span className="w-fit rounded-full bg-success-bg px-1.5 py-px text-[10px] font-semibold text-success">
+      в расходах
+    </span>
+  ) : (
+    <span className="w-fit rounded-full bg-black/[0.05] px-1.5 py-px text-[10px] font-semibold text-muted">
+      не в расходах
+    </span>
+  );
+}
+
 /** Краткое перечисление наименований позиций: «А, Б +3». */
 function itemsLabel(order: OrderListItem) {
   const names = order.items.map((i) => i.product?.name ?? "—");
@@ -93,6 +107,7 @@ function OrderCard({
         <span className="text-xs text-muted">
           {formatDate(order.created_at)} · {formatWeight(order.total_weight)} · {order.items.length} поз.
         </span>
+        <ExpenseBadge has={order.has_expense} />
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         {!hideMoney && (
@@ -152,6 +167,7 @@ function OrderDetailModal({
           <Field label="Срок" value={order.deadline ? formatDate(order.deadline) : "—"} />
           <Field label="Менеджер" value={order.manager?.full_name ?? "—"} />
           <Field label="Общий вес" value={formatWeight(order.total_weight)} />
+          <Field label="В расходах" value={order.has_expense ? "Да" : "Нет"} />
         </div>
 
         <div>
@@ -226,6 +242,7 @@ export default function OrdersPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [expenseFilter, setExpenseFilter] = useState<"all" | "in" | "out">("all");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [selected, setSelected] = useState<OrderListItem | null>(null);
@@ -234,6 +251,7 @@ export default function OrdersPage() {
     search: search || undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
+    in_expenses: expenseFilter === "all" ? undefined : expenseFilter === "in",
   };
 
   const { data, isLoading, isError, error } = useOrdersList({
@@ -265,9 +283,12 @@ export default function OrdersPage() {
     {
       header: "№",
       cell: (row) => (
-        <Link href={`/orders/${row.id}`} className="font-semibold text-primary hover:underline">
-          {row.order_number}
-        </Link>
+        <div className="flex flex-col items-start gap-1">
+          <Link href={`/orders/${row.id}`} className="font-semibold text-primary hover:underline">
+            {row.order_number}
+          </Link>
+          <ExpenseBadge has={row.has_expense} />
+        </div>
       ),
     },
     {
@@ -426,6 +447,29 @@ export default function OrdersPage() {
             Сбросить
           </button>
         )}
+
+        {/* Фильтр «занесён в расходы»: все / только с авто-расходом / только без. */}
+        <div className="flex gap-1 rounded-xl border border-white/40 bg-white/40 p-1">
+          {([
+            ["all", "Все"],
+            ["in", "В расходах"],
+            ["out", "Не в расходах"],
+          ] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => {
+                setExpenseFilter(v);
+                resetPage();
+              }}
+              className={clsx(
+                "whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                expenseFilter === v ? "bg-white/90 text-text shadow-sm" : "text-muted hover:text-text"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         <div className="flex-1" />
 

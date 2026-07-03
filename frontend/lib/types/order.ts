@@ -87,6 +87,8 @@ export interface OrderListItem {
   manager?: UserBrief | null;
   items: OrderItemRead[];
   total_weight: string;
+  /** true → по заказу есть авто-расход себестоимости сырья. */
+  has_expense: boolean;
 }
 
 export interface OrderSummary {

@@ -123,6 +123,8 @@ class OrderListItem(BaseModel):
     client: _ClientBrief | None = None
     manager: _UserBrief | None = None
     items: list[OrderItemRead] = []
+    # True → по заказу есть авто-расход себестоимости сырья (см. order_service).
+    has_expense: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
