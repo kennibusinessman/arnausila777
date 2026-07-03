@@ -86,9 +86,19 @@ export default function ExpensesPage() {
               <Receipt className="h-4 w-4" strokeWidth={2} />
             </span>
             <div className="flex min-w-0 flex-col">
-              <Link href={`/expenses/${row.id}`} className="truncate font-medium text-text hover:text-primary">
-                {row.name}
-              </Link>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Link href={`/expenses/${row.id}`} className="truncate font-medium text-text hover:text-primary">
+                  {row.name}
+                </Link>
+                {row.order_id && (
+                  <span
+                    title="Авто-расход себестоимости сырья по заказу"
+                    className="shrink-0 rounded-full border border-border px-1.5 py-px text-[10px] font-semibold text-muted"
+                  >
+                    Авто
+                  </span>
+                )}
+              </div>
               {row.comment && <span className="truncate text-xs text-muted">{row.comment}</span>}
             </div>
           </div>
@@ -119,25 +129,37 @@ export default function ExpensesPage() {
     {
       header: "",
       align: "right",
-      cell: (row) => (
-        <div className="flex items-center justify-end gap-1">
-          <Link
-            href={`/expenses/${row.id}`}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-black/[0.04] hover:text-text"
-          >
-            <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
-          </Link>
-          {isSuperAdmin && (
-            <button
-              onClick={() => handleDelete(row)}
-              disabled={deleteExpense.isPending}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+      cell: (row) =>
+        // Авто-расход по заказу правится только через сам заказ — ручных кнопок нет.
+        row.order_id ? (
+          <div className="flex justify-end">
+            <Link
+              href={`/orders/${row.order_id}`}
+              title="Меняется через заказ"
+              className="text-[11px] font-medium text-muted hover:text-primary hover:underline"
             >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-            </button>
-          )}
-        </div>
-      ),
+              к заказу ›
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center justify-end gap-1">
+            <Link
+              href={`/expenses/${row.id}`}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-black/[0.04] hover:text-text"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+            </Link>
+            {isSuperAdmin && (
+              <button
+                onClick={() => handleDelete(row)}
+                disabled={deleteExpense.isPending}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+              </button>
+            )}
+          </div>
+        ),
     },
   ];
 
@@ -385,11 +407,14 @@ export default function ExpensesPage() {
         actions={
           selected && (
             <>
-              <Link href={`/expenses/${selected.id}`} className={modalPrimaryBtn}>
-                Открыть полностью
+              <Link
+                href={selected.order_id ? `/orders/${selected.order_id}` : `/expenses/${selected.id}`}
+                className={modalPrimaryBtn}
+              >
+                {selected.order_id ? "К заказу" : "Открыть полностью"}
                 <ChevronRight className="h-4 w-4" strokeWidth={2} />
               </Link>
-              {isSuperAdmin && (
+              {isSuperAdmin && !selected.order_id && (
                 <Button
                   variant="danger"
                   onClick={() => {

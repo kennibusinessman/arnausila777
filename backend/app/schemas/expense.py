@@ -85,6 +85,7 @@ class ExpenseRead(BaseModel):
     comment: str | None
     created_by: uuid.UUID
     responsible_id: uuid.UUID | None
+    order_id: uuid.UUID | None = None
     created_at: datetime
     category: _CategoryBrief | None = None
     creator: _UserBrief | None = None
@@ -102,6 +103,7 @@ class ExpenseListItem(BaseModel):
     category_id: uuid.UUID
     amount: Decimal
     comment: str | None
+    order_id: uuid.UUID | None = None
     created_at: datetime
     category: _CategoryBrief | None = None
     responsible: _UserBrief | None = None

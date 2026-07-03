@@ -18,9 +18,21 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import UserRole, WarehouseType
+from app.core.enums import ExpenseCategoryType, UserRole, WarehouseType
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.models import Client, Order, OrderItem, Product, Shipment, ShipmentItem, User, Warehouse
+from app.models import (
+    Client,
+    Expense,
+    ExpenseCategory,
+    Order,
+    OrderItem,
+    Product,
+    Settings,
+    Shipment,
+    ShipmentItem,
+    User,
+    Warehouse,
+)
 from app.schemas.common import PageParams
 from app.schemas.order import (
     OrderCreate,
@@ -125,6 +137,96 @@ async def _build_items(
         )
         total += total_price
     return order_items, total, by_id
+
+
+# ── Авто-расход себестоимости сырья по заказу (схема «по продаже», COGS) ─────────
+# Правило совпадает с экономикой заказа на фронте (orderEconomics.ts):
+# себестоимость сырья = вес заказа (кг) × цена сырья за кг (Settings.raw_price_per_kg).
+# Такой расход авто-создаётся/меняется/удаляется вместе с заказом и помечен order_id.
+RAW_COGS_CATEGORY_NAME = "Сырьё (по заказам)"
+
+
+def _order_weight_kg(items: list[OrderItem], products_by_id: dict[uuid.UUID, Product]) -> Decimal:
+    """Вес заказа = Σ(кол-во × вес единицы товара). Товар без веса (напр. дастархан
+    без base_weight) в вес не добавляет — как и в экономике заказа на фронте."""
+    total = Decimal("0")
+    for it in items:
+        product = products_by_id.get(it.product_id)
+        base_weight = product.base_weight if product and product.base_weight else Decimal("0")
+        total += it.quantity * base_weight
+    return total
+
+
+async def _raw_cogs_category(session: AsyncSession) -> ExpenseCategory:
+    """Категория авто-расхода на сырьё — единая «Сырьё (по заказам)» (заводим при
+    первом заказе). Отдельная от ручного «Закуп сырья», чтобы не смешивались."""
+    category = (
+        await session.execute(
+            select(ExpenseCategory)
+            .where(
+                ExpenseCategory.name == RAW_COGS_CATEGORY_NAME,
+                ExpenseCategory.type == ExpenseCategoryType.RAW_MATERIAL_PURCHASE,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if category is None:
+        category = ExpenseCategory(
+            name=RAW_COGS_CATEGORY_NAME,
+            type=ExpenseCategoryType.RAW_MATERIAL_PURCHASE,
+            is_active=True,
+        )
+        session.add(category)
+        await session.flush()
+    return category
+
+
+async def _order_raw_expense(session: AsyncSession, order_id: uuid.UUID) -> Expense | None:
+    return (
+        await session.execute(
+            select(Expense)
+            .where(Expense.order_id == order_id, Expense.deleted_at.is_(None))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _sync_order_raw_expense(
+    session: AsyncSession, actor: User, order: Order, weight_kg: Decimal
+) -> None:
+    """Приводит авто-расход сырья заказа в соответствие текущему весу: создаёт,
+    обновляет сумму или (если веса/суммы нет) убирает. Цена сырья — из Settings."""
+    settings_row = await session.get(Settings, 1)
+    raw_price = settings_row.raw_price_per_kg if settings_row else Decimal("750")
+    amount = (weight_kg * raw_price).quantize(Decimal("0.01"))
+    existing = await _order_raw_expense(session, order.id)
+
+    if amount <= 0:
+        if existing is not None:
+            existing.deleted_at = datetime.now(timezone.utc)
+        return
+
+    expense_date = order.deadline or datetime.now(timezone.utc).date()
+    name = f"Сырьё по заказу {order.order_number}"
+    if existing is not None:
+        existing.amount = amount
+        existing.expense_date = expense_date
+        existing.name = name
+        return
+
+    category = await _raw_cogs_category(session)
+    session.add(
+        Expense(
+            name=name,
+            expense_date=expense_date,
+            category_id=category.id,
+            amount=amount,
+            comment="Автоматически: себестоимость сырья по заказу",
+            created_by=actor.id,
+            responsible_id=None,
+            order_id=order.id,
+        )
+    )
 
 
 def _full_query():
@@ -303,6 +405,9 @@ async def create_order(session: AsyncSession, actor: User, data: OrderCreate) ->
         session, actor, order, warehouse.id, shipment_date, data.comment, products_by_id
     )
 
+    # Авто-расход себестоимости сырья (схема «по продаже»).
+    await _sync_order_raw_expense(session, actor, order, _order_weight_kg(items, products_by_id))
+
     await audit_service.log(
         session,
         user_id=actor.id,
@@ -334,6 +439,13 @@ async def update_order(
 
     for field, value in payload.items():
         setattr(order, field, value)
+
+    # Состав (вес) при правке шапки не меняется, но если сдвинули дату заказа —
+    # двигаем и дату авто-расхода сырья, чтобы он попал в тот же период в отчётах.
+    if "deadline" in payload:
+        raw_expense = await _order_raw_expense(session, order.id)
+        if raw_expense is not None:
+            raw_expense.expense_date = order.deadline or raw_expense.expense_date
 
     await audit_service.log(
         session,
@@ -382,6 +494,9 @@ async def replace_order(
     shipment = await shipment_service.create_shipment_for_order(
         session, actor, order, warehouse.id, shipment_date, data.comment, products_by_id
     )
+
+    # Пересчитываем авто-расход сырья под новый состав/вес.
+    await _sync_order_raw_expense(session, actor, order, _order_weight_kg(items, products_by_id))
 
     await audit_service.log(
         session,
@@ -455,6 +570,11 @@ async def delete_order(session: AsyncSession, actor: User, order_id: uuid.UUID) 
         shipment.deleted_at = now
 
     order.deleted_at = now
+    # Убираем авто-расход сырья вместе с заказом.
+    raw_expense = await _order_raw_expense(session, order_id)
+    if raw_expense is not None:
+        raw_expense.deleted_at = now
+
     await audit_service.log(
         session,
         user_id=actor.id,

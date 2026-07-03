@@ -163,10 +163,21 @@ async def create_expense(
     return await get_full(session, expense.id)
 
 
+def _reject_if_auto(expense: Expense) -> None:
+    """Авто-расход себестоимости сырья (order_id заполнен) синхронизируется с
+    заказом — вручную его править/удалять нельзя, иначе сумма разойдётся с заказом."""
+    if expense.order_id is not None:
+        raise BadRequestError(
+            "Это авто-расход себестоимости сырья по заказу — меняется или удаляется "
+            "вместе с заказом, вручную нельзя."
+        )
+
+
 async def update_expense(
     session: AsyncSession, actor_id: uuid.UUID, expense_id: uuid.UUID, data: ExpenseUpdate
 ) -> Expense:
     expense = await get_full(session, expense_id)
+    _reject_if_auto(expense)
 
     payload = data.model_dump(exclude_unset=True)
     if "category_id" in payload:
@@ -188,6 +199,7 @@ async def update_expense(
 
 async def delete_expense(session: AsyncSession, actor_id: uuid.UUID, expense_id: uuid.UUID) -> None:
     expense = await get_full(session, expense_id)
+    _reject_if_auto(expense)
     expense.deleted_at = datetime.now(timezone.utc)
     await audit_service.log(
         session,

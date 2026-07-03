@@ -123,22 +123,31 @@ export default function ExpenseDetailPage() {
         <p className="rounded-lg bg-danger-bg px-3.5 py-2.5 text-sm text-danger">{actionError}</p>
       )}
 
-      {!editing && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-            Редактировать
-          </Button>
-          {isSuperAdmin && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleDelete}
-              className="ml-auto text-danger hover:bg-danger-bg"
-            >
-              Удалить расход
+      {expense.order_id ? (
+        <p className="rounded-lg border border-border bg-black/[0.02] px-3.5 py-2.5 text-sm text-muted">
+          Это авто-расход себестоимости сырья по заказу — меняется и удаляется вместе с заказом.{" "}
+          <Link href={`/orders/${expense.order_id}`} className="font-medium text-primary hover:underline">
+            Открыть заказ ›
+          </Link>
+        </p>
+      ) : (
+        !editing && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+              Редактировать
             </Button>
-          )}
-        </div>
+            {isSuperAdmin && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleDelete}
+                className="ml-auto text-danger hover:bg-danger-bg"
+              >
+                Удалить расход
+              </Button>
+            )}
+          </div>
+        )
       )}
 
       {editing && (

@@ -59,6 +59,8 @@ export interface ExpenseRead {
   comment: string | null;
   created_by: string;
   responsible_id: string | null;
+  /** Непусто → авто-расход себестоимости сырья по заказу (правится только через заказ). */
+  order_id?: string | null;
   created_at: string;
   category?: CategoryBrief | null;
   creator?: UserBrief | null;
@@ -72,6 +74,8 @@ export interface ExpenseListItem {
   category_id: string;
   amount: string;
   comment: string | null;
+  /** Непусто → авто-расход себестоимости сырья по заказу (правится только через заказ). */
+  order_id?: string | null;
   created_at: string;
   category?: CategoryBrief | null;
   responsible?: UserBrief | null;

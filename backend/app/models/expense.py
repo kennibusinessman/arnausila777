@@ -41,6 +41,10 @@ class Expense(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     comment: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     responsible_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    # Заполнен → это авто-расход себестоимости сырья по заказу (создаётся/меняется/
+    # удаляется вместе с заказом, см. order_service). Такой расход нельзя править
+    # вручную, чтобы не разошёлся с заказом.
+    order_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("orders.id"), index=True)
 
     category: Mapped[ExpenseCategory] = relationship(back_populates="expenses")
     creator: Mapped[User] = relationship(foreign_keys=[created_by])
