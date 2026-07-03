@@ -11,7 +11,7 @@ import type { MaterialCreate, MaterialUpdate } from "@/lib/types/material";
 export function useMaterialOptions() {
   return useQuery({
     queryKey: ["material-options"],
-    queryFn: () => listMaterials({ size: 100, is_active: true }).then((r) => r.data.items),
+    queryFn: () => listMaterials({ size: 1000, is_active: true }).then((r) => r.data.items),
     staleTime: 60_000,
   });
 }

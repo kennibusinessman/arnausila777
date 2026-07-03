@@ -12,7 +12,7 @@ import type { ProductCreate, ProductUpdate } from "@/lib/types/product";
 export function useProductOptions() {
   return useQuery({
     queryKey: ["product-options"],
-    queryFn: () => listProducts({ size: 100, is_active: true }).then((r) => r.data.items),
+    queryFn: () => listProducts({ size: 1000, is_active: true }).then((r) => r.data.items),
     staleTime: 60_000,
   });
 }

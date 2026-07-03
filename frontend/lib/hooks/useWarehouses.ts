@@ -8,7 +8,7 @@ import { listWarehouses } from "@/lib/api/warehouses";
 export function useWarehouseOptions() {
   return useQuery({
     queryKey: ["warehouse-options"],
-    queryFn: () => listWarehouses({ size: 100, is_active: true }).then((r) => r.data.items),
+    queryFn: () => listWarehouses({ size: 1000, is_active: true }).then((r) => r.data.items),
     staleTime: 60_000,
   });
 }

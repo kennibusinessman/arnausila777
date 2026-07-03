@@ -157,7 +157,9 @@ export default function StockPage() {
   }
 
   // Остатки не постраничные: один товар суммируется по всем складам в единый пул.
-  const balances = useStockBalances({ size: 100 });
+  // size:1000 (а не 100) — иначе строки остатков по складам обрезаются на сотне и
+  // часть товаров пропадает из списка, хотя в «Товарах» они есть (остаток не ноль).
+  const balances = useStockBalances({ size: 1000 });
   const movements = useStockMovements({
     page,
     size: PAGE_SIZE,

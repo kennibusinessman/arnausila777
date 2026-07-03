@@ -14,7 +14,11 @@ class Message(BaseModel):
 
 class PageParams(BaseModel):
     page: int = Field(default=1, ge=1)
-    size: int = Field(default=20, ge=1, le=100)
+    # Потолок 1000 (а не 100): страницы-справочники («Остатки», выпадающие списки
+    # товаров/клиентов/складов) грузят весь набор одной страницей. При каталоге в
+    # сотни позиций лимит 100 молча терял «хвост» — товар был в «Товарах», но
+    # пропадал из «Остатков» и из поиска в заказе.
+    size: int = Field(default=20, ge=1, le=1000)
 
     @property
     def offset(self) -> int:

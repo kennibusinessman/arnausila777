@@ -54,7 +54,9 @@ async def get_current_active_user(
 
 def pagination(
     page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    # Потолок совпадает с PageParams.size (см. schemas/common.py): справочные
+    # списки берут весь набор одной страницей, поэтому 1000, а не 100.
+    size: Annotated[int, Query(ge=1, le=1000)] = 20,
 ) -> PageParams:
     return PageParams(page=page, size=size)
 

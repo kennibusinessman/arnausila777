@@ -40,7 +40,7 @@ export function useClientStats(clientId: string | undefined) {
 export function useClientOptions() {
   return useQuery({
     queryKey: ["client-options"],
-    queryFn: () => listClients({ size: 100 }).then((r) => r.data.items),
+    queryFn: () => listClients({ size: 1000 }).then((r) => r.data.items),
     staleTime: 60_000,
   });
 }
