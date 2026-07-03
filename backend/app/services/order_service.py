@@ -139,6 +139,19 @@ async def _build_items(
     return order_items, total, by_id
 
 
+def _require_product_weights(products: list[Product]) -> None:
+    """Заказ С ЦЕНАМИ требует, чтобы у каждого товара был указан вес единицы:
+    вес идёт в расчёт себестоимости сырья/рентабельности и авто-расхода. Заказ
+    без цен (зав. склад) эту проверку не проходит — вес доуточнят при доценке."""
+    missing = sorted({p.name for p in products if p.base_weight is None or p.base_weight <= 0})
+    if missing:
+        raise BadRequestError(
+            "Нельзя проставить цены: не указан вес у товаров — "
+            + ", ".join(missing)
+            + ". Заполните «Вес ед., кг» в карточке товара."
+        )
+
+
 # ── Авто-расход себестоимости сырья по заказу (схема «по продаже», COGS) ─────────
 # Правило совпадает с экономикой заказа на фронте (orderEconomics.ts):
 # себестоимость сырья = вес заказа (кг) × цена сырья за кг (Settings.raw_price_per_kg).
@@ -387,6 +400,10 @@ async def create_order(session: AsyncSession, actor: User, data: OrderCreate) ->
     items, total, products_by_id = await _build_items(
         session, data.items, unpriced=_is_warehouse(actor)
     )
+    # Заказ с ценами — у всех товаров должен быть вес. Заказ зав. склада без цен
+    # эту проверку не проходит (вес доуточнят при доценке менеджером).
+    if not _is_warehouse(actor):
+        _require_product_weights(list(products_by_id.values()))
     order = Order(
         order_number=await _generate_order_number(session),
         client_id=data.client_id,
@@ -478,8 +495,9 @@ async def replace_order(
         await shipment_service.reverse_shipment_stock(session, actor, shipment)
         shipment.deleted_at = now
 
-    # 2) Новый состав/цены и шапка.
+    # 2) Новый состав/цены и шапка. Полная правка всегда с ценами → требуем вес.
     items, total, products_by_id = await _build_items(session, data.items)
+    _require_product_weights(list(products_by_id.values()))
     order.client_id = data.client_id
     order.manager_id = data.manager_id
     order.deadline = data.deadline
@@ -519,6 +537,8 @@ async def price_order(
     (Σ shipments.total_amount), поэтому без зеркалирования цен в отгрузку выручка не
     сойдётся. Остатки склада не трогаются — цена на количество не влияет."""
     order = await get_full(session, actor, order_id)
+    # Доценка = проставление цен → требуем вес у всех товаров заказа.
+    _require_product_weights([it.product for it in order.items])
 
     by_id = {it.id: it for it in order.items}
     price_by_product: dict[uuid.UUID, Decimal] = {}

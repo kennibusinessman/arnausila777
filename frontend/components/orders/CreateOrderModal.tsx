@@ -77,6 +77,26 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
       setError("Добавьте хотя бы один товар");
       return;
     }
+    // Заказ с ценами (не зав. склад) требует вес у всех товаров — то же правило на
+    // бэке. Зав. склад создаёт заказ без цен, ему проверка не мешает.
+    if (!hideMoney) {
+      const list = products.data ?? [];
+      const noWeight = [
+        ...new Set(
+          validItems
+            .map((i) => list.find((p) => p.id === i.product_id))
+            .filter((p): p is NonNullable<typeof p> => !!p && (!p.base_weight || Number(p.base_weight) <= 0))
+            .map((p) => p.name)
+        ),
+      ];
+      if (noWeight.length > 0) {
+        setError(
+          "Не указан вес у товаров: " + noWeight.join(", ") +
+            ". Заполните «Вес ед., кг» в карточке товара."
+        );
+        return;
+      }
+    }
     setError(null);
     createOrder.mutate(
       { client_id: clientId, deadline: date, comment: comment || null, items: validItems },

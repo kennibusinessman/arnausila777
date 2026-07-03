@@ -128,6 +128,16 @@ function PricingCard({ order }: { order: OrderRead }) {
     0
   );
 
+  // Доценить нельзя, пока у каждого товара не указан вес (то же правило на бэке):
+  // вес идёт в себестоимость сырья/рентабельность и авто-расход по заказу.
+  const missingWeight = [
+    ...new Set(
+      order.items
+        .filter((it) => !it.product?.base_weight || Number(it.product.base_weight) <= 0)
+        .map((it) => it.product?.name ?? String(it.product_id))
+    ),
+  ];
+
   function handleSave() {
     setError(null);
     priceOrder.mutate(
@@ -167,9 +177,19 @@ function PricingCard({ order }: { order: OrderRead }) {
           </div>
         ))}
       </div>
+      {missingWeight.length > 0 && (
+        <p className="mt-3 rounded-lg bg-warning-bg px-3 py-2 text-[12.5px] text-warning">
+          Нельзя проставить цены: не указан вес у товаров — {missingWeight.join(", ")}. Заполните
+          «Вес ед., кг» в карточке товара (раздел «Товары»).
+        </p>
+      )}
       <div className="mt-3 flex items-center justify-between">
         <span className="text-[13.5px] font-semibold text-text">Итого: {formatCurrency(total)}</span>
-        <Button size="sm" onClick={handleSave} disabled={priceOrder.isPending}>
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={priceOrder.isPending || missingWeight.length > 0}
+        >
           {priceOrder.isPending ? "Сохранение…" : "Сохранить цены"}
         </Button>
       </div>
