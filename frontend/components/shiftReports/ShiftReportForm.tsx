@@ -93,11 +93,15 @@ export function ShiftReportForm({
   const products = productsQuery.data ?? [];
   const materials = materialsQuery.data ?? [];
 
-  // В выпуске показываем только товары выбранной категории.
-  const categoryProducts = useMemo(
-    () => products.filter((p) => norm(p.category) === norm(category)),
-    [products, category]
-  );
+  // В выпуске показываем товары выбранной категории. В смене «Одноразовые простыни»
+  // дополнительно разрешаем выпуск спанбонда — иногда его делают раскруткой в ту же смену.
+  const categoryProducts = useMemo(() => {
+    const allowed =
+      norm(category) === norm(PRODUCT_CATEGORY.SHEETS)
+        ? [norm(PRODUCT_CATEGORY.SHEETS), norm(PRODUCT_CATEGORY.SPUNBOND)]
+        : [norm(category)];
+    return products.filter((p) => allowed.includes(norm(p.category)));
+  }, [products, category]);
 
   // Слот сырья определяется выбранной категорией:
   // Спанбонд → Полипропилен; Простыни → Спанбонд·Бабины; Дастархан → Спанбонд·Дастархан сырьё.
