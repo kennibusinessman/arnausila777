@@ -130,6 +130,7 @@ export default function StockPage() {
   const [selectedMovement, setSelectedMovement] = useState<StockMovementRead | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [subcategoryFilter, setSubcategoryFilter] = useState<string | null>(null);
+  const [noWeightOnly, setNoWeightOnly] = useState(false);
   const [movementType, setMovementType] = useState<MovementType | "">("");
   const [page, setPage] = useState(1);
   const [showAdjust, setShowAdjust] = useState(false);
@@ -213,11 +214,18 @@ export default function StockPage() {
     } else {
       filtered = aggregatedBalances;
     }
+    // Галка «Без веса»: только готовая продукция без указанного base_weight —
+    // такие товары нельзя продать с ценами (см. проверку веса в заказах).
+    if (noWeightOnly) {
+      filtered = filtered.filter(
+        (r) => r.item_type === ItemType.PRODUCT && (!r.base_weight || r.base_weight <= 0)
+      );
+    }
     return [...filtered].sort((a, b) => {
       if (a.item_type !== b.item_type) return a.item_type === ItemType.PRODUCT ? -1 : 1;
       return a.name.localeCompare(b.name, "ru");
     });
-  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView]);
+  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView, noWeightOnly]);
 
   // KPI по текущему фильтру.
   const showWeight = categoryFilter !== DASTARKHAN;
@@ -231,6 +239,10 @@ export default function StockPage() {
   );
   const piecesSum = sortedBalances.reduce((s, r) => s + (norm(r.unit) === "шт" ? r.quantity : 0), 0);
   const lowCount = sortedBalances.filter((r) => statusOf(r) === "low").length;
+  // Товары без указанного веса — по всему складу (для счётчика на галке «Без веса»).
+  const weightlessCount = aggregatedBalances.filter(
+    (r) => r.item_type === ItemType.PRODUCT && (!r.base_weight || r.base_weight <= 0)
+  ).length;
   // Запас сырья ПП (полипропилен) — глобально, независимо от фильтра.
   const ppKg = aggregatedBalances
     .filter((r) => r.item_type === ItemType.MATERIAL && norm(r.name).includes("полипропилен"))
@@ -471,6 +483,20 @@ export default function StockPage() {
                 {c.label}
               </button>
             ))}
+            <span className="mx-0.5 hidden h-5 w-px self-center bg-black/10 sm:block" />
+            <button
+              onClick={() => setNoWeightOnly((v) => !v)}
+              title="Показать только товары без указанного веса"
+              className={clsx(
+                "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[13px] transition-colors",
+                noWeightOnly
+                  ? "bg-danger-bg font-semibold text-danger"
+                  : "font-medium text-muted hover:text-text"
+              )}
+            >
+              <Scale className="h-[14px] w-[14px]" strokeWidth={2} />
+              Без веса{weightlessCount > 0 ? ` (${weightlessCount})` : ""}
+            </button>
           </div>
 
           {/* ===== SUBCATEGORY CHIPS (Спанбонд / Сырьё) ===== */}
@@ -555,6 +581,8 @@ export default function StockPage() {
                         ? CATEGORY_SHORT[known] ?? known
                         : row.category ?? (row.item_type === ItemType.MATERIAL ? "Сырьё" : "—");
                       const weight = weightKgOf(row);
+                      const noWeight =
+                        row.item_type === ItemType.PRODUCT && (!row.base_weight || row.base_weight <= 0);
                       const st = STATUS_META[statusOf(row)];
                       return (
                         <div
@@ -595,9 +623,15 @@ export default function StockPage() {
                             <span className="text-[14px] font-bold text-text">{formatNumber(row.quantity, 0)}</span>
                             <span className="text-[11.5px] text-muted"> {row.unit}</span>
                           </span>
-                          <span className={clsx("text-[13px] font-semibold", weight !== null ? "text-info" : "text-muted/60")}>
-                            {weight !== null ? formatWeight(weight) : "—"}
-                          </span>
+                          {noWeight ? (
+                            <span className="inline-flex w-fit rounded-full bg-danger-bg px-2 py-0.5 text-[11px] font-semibold text-danger">
+                              нет веса
+                            </span>
+                          ) : (
+                            <span className={clsx("text-[13px] font-semibold", weight !== null ? "text-info" : "text-muted/60")}>
+                              {weight !== null ? formatWeight(weight) : "—"}
+                            </span>
+                          )}
                           <span>
                             <span className={clsx("inline-flex rounded-full px-2.5 py-1 text-[11.5px] font-semibold", st.cls)}>
                               {st.label}
@@ -632,6 +666,8 @@ export default function StockPage() {
                   ? CATEGORY_SHORT[known] ?? known
                   : row.category ?? (row.item_type === ItemType.MATERIAL ? "Сырьё" : "—");
                 const weight = weightKgOf(row);
+                const noWeight =
+                  row.item_type === ItemType.PRODUCT && (!row.base_weight || row.base_weight <= 0);
                 const st = STATUS_META[statusOf(row)];
                 return (
                   <button
@@ -656,6 +692,11 @@ export default function StockPage() {
                         <span className={clsx("inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold", st.cls)}>
                           {st.label}
                         </span>
+                        {noWeight && (
+                          <span className="inline-flex rounded-full bg-danger-bg px-2 py-0.5 text-[11px] font-semibold text-danger">
+                            нет веса
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-0.5">
