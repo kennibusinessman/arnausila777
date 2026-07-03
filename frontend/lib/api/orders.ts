@@ -19,6 +19,8 @@ export interface OrderFilterParams {
   search?: string;
   /** true — только с авто-расходом сырья; false — только без; undefined — все. */
   in_expenses?: boolean;
+  /** true — только с заполненными ценами (сумма > 0); false — только без цен; undefined — все. */
+  priced?: boolean;
 }
 
 export interface ListOrdersParams extends Partial<PageParams>, OrderFilterParams {

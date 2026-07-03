@@ -271,6 +271,7 @@ def _list_conditions(
     deadline_to: date | None = None,
     search: str | None = None,
     in_expenses: bool | None = None,
+    priced: bool | None = None,
 ) -> list[ColumnElement[bool]]:
     """Общие условия фильтрации для списка и агрегатов периода (§OrderSummary)."""
     conditions: list[ColumnElement[bool]] = [Order.deleted_at.is_(None), *_scope(actor)]
@@ -298,6 +299,9 @@ def _list_conditions(
             .exists()
         )
         conditions.append(has_expense if in_expenses else ~has_expense)
+    if priced is not None:
+        # «С ценами» = сумма заказа > 0; «без цен» = 0 (заказ зав. склада до доценки).
+        conditions.append(Order.total_amount > 0 if priced else Order.total_amount == 0)
     return conditions
 
 
@@ -314,6 +318,7 @@ async def list_orders(
     deadline_to: date | None = None,
     search: str | None = None,
     in_expenses: bool | None = None,
+    priced: bool | None = None,
     sort: str = "desc",
 ) -> tuple[list[Order], int]:
     conditions = _list_conditions(
@@ -326,6 +331,7 @@ async def list_orders(
         deadline_to=deadline_to,
         search=search,
         in_expenses=in_expenses,
+        priced=priced,
     )
 
     total = (
@@ -378,6 +384,7 @@ async def get_summary(
     deadline_to: date | None = None,
     search: str | None = None,
     in_expenses: bool | None = None,
+    priced: bool | None = None,
 ) -> OrderSummary:
     """Агрегаты count/сумма/позиции по тем же фильтрам, что и список — без пагинации."""
     conditions = _list_conditions(
@@ -390,6 +397,7 @@ async def get_summary(
         deadline_to=deadline_to,
         search=search,
         in_expenses=in_expenses,
+        priced=priced,
     )
 
     count, total_amount = (

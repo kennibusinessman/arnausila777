@@ -76,6 +76,7 @@ async def list_orders(
     deadline_to: Annotated[date | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     in_expenses: Annotated[bool | None, Query()] = None,
+    priced: Annotated[bool | None, Query()] = None,
     sort: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> Page[OrderListItem]:
     items, total = await order_service.list_orders(
@@ -90,6 +91,7 @@ async def list_orders(
         deadline_to=deadline_to,
         search=search,
         in_expenses=in_expenses,
+        priced=priced,
         sort=sort,
     )
     rows = [OrderListItem.model_validate(i) for i in items]
@@ -114,6 +116,7 @@ async def get_orders_summary(
     deadline_to: Annotated[date | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     in_expenses: Annotated[bool | None, Query()] = None,
+    priced: Annotated[bool | None, Query()] = None,
 ) -> OrderSummary:
     summary = await order_service.get_summary(
         db,
@@ -126,6 +129,7 @@ async def get_orders_summary(
         deadline_to=deadline_to,
         search=search,
         in_expenses=in_expenses,
+        priced=priced,
     )
     if actor.role is UserRole.WAREHOUSE_MANAGER:
         summary.total_amount = Decimal("0")  # зав. складом денег не видит

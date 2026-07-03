@@ -71,6 +71,16 @@ function ExpenseBadge({ has }: { has: boolean }) {
   );
 }
 
+/** Бейдж «без цен» для заказов зав. склада до доценки (сумма = 0). */
+function PriceBadge({ priced }: { priced: boolean }) {
+  if (priced) return null;
+  return (
+    <span className="w-fit rounded-full bg-warning-bg px-1.5 py-px text-[10px] font-semibold text-warning">
+      без цен
+    </span>
+  );
+}
+
 /** Краткое перечисление наименований позиций: «А, Б +3». */
 function itemsLabel(order: OrderListItem) {
   const names = order.items.map((i) => i.product?.name ?? "—");
@@ -107,7 +117,10 @@ function OrderCard({
         <span className="text-xs text-muted">
           {formatDate(order.created_at)} · {formatWeight(order.total_weight)} · {order.items.length} поз.
         </span>
-        <ExpenseBadge has={order.has_expense} />
+        <div className="flex flex-wrap gap-1">
+          <ExpenseBadge has={order.has_expense} />
+          {!hideMoney && <PriceBadge priced={Number(order.total_amount) > 0} />}
+        </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         {!hideMoney && (
@@ -243,6 +256,7 @@ export default function OrdersPage() {
   const [dateTo, setDateTo] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expenseFilter, setExpenseFilter] = useState<"all" | "in" | "out">("all");
+  const [priceFilter, setPriceFilter] = useState<"all" | "priced" | "unpriced">("all");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [selected, setSelected] = useState<OrderListItem | null>(null);
@@ -252,6 +266,7 @@ export default function OrdersPage() {
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     in_expenses: expenseFilter === "all" ? undefined : expenseFilter === "in",
+    priced: hideMoney || priceFilter === "all" ? undefined : priceFilter === "priced",
   };
 
   const { data, isLoading, isError, error } = useOrdersList({
@@ -288,6 +303,7 @@ export default function OrdersPage() {
             {row.order_number}
           </Link>
           <ExpenseBadge has={row.has_expense} />
+          {!hideMoney && <PriceBadge priced={Number(row.total_amount) > 0} />}
         </div>
       ),
     },
@@ -470,6 +486,31 @@ export default function OrdersPage() {
             </button>
           ))}
         </div>
+
+        {/* Фильтр «с ценами / без цен»: без цен — заказ зав. склада до доценки. */}
+        {!hideMoney && (
+          <div className="flex gap-1 rounded-xl border border-white/40 bg-white/40 p-1">
+            {([
+              ["all", "Все"],
+              ["priced", "С ценами"],
+              ["unpriced", "Без цен"],
+            ] as const).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => {
+                  setPriceFilter(v);
+                  resetPage();
+                }}
+                className={clsx(
+                  "whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                  priceFilter === v ? "bg-white/90 text-text shadow-sm" : "text-muted hover:text-text"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex-1" />
 
