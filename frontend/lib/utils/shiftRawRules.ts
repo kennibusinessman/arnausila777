@@ -4,17 +4,22 @@
  *
  *  - Спанбонд            → сырьё Полипропилен (материал со склада сырья);
  *  - Одноразовые простыни → сырьё Спанбонд — ЛЮБОЙ товар категории «Спанбонд»;
- *  - Дастархан           → сырьё Спанбонд — ЛЮБОЙ товар категории «Спанбонд».
+ *  - Дастархан           → сырьё «Сырьё Дастархан» (материал со склада сырья) по
+ *                          умолчанию + при необходимости ЛЮБОЙ товар «Спанбонд».
  *
  * Для простыней/дастархана в выпадающем списке доступен весь спанбонд (любая
- * подкатегория). Подкатегория из defaultSubcategory подставляется только при
- * создании сырья-товара «на ходу» — сам список подкатегорий не меняется.
+ * подкатегория). У Дастархана в тот же слот подмешиваются материалы «Сырьё Дастархан»
+ * (alsoMaterials) — они идут первыми и выбираются по умолчанию; каждый вариант несёт
+ * свой kind (material/product), поэтому в один отчёт можно записать и материал, и
+ * спанбонд. Подкатегория из defaultSubcategory подставляется только при создании
+ * сырья-товара «на ходу» — сам список подкатегорий не меняется.
  *
  * Строковые константы должны совпадать с category/subcategory в справочнике товаров
- * (см. backend/app/models/product.py).
+ * (см. backend/app/models/product.py) и подкатегориями сырья (productCategories.ts).
  */
 import type { MaterialRead } from "@/lib/types/material";
 import type { ProductRead } from "@/lib/types/product";
+import { rawSubcategoryOf } from "@/lib/utils/productCategories";
 
 export const PRODUCT_CATEGORY = {
   SPUNBOND: "Спанбонд",
@@ -29,6 +34,10 @@ export const SPUNBOND_SUBCATEGORY = {
 } as const;
 
 export const POLYPROPYLENE = "Полипропилен";
+
+/** Подкатегория сырья-материала для Дастархана (см. RAW_MATERIAL_SUBCATEGORIES в
+ *  productCategories.ts) — «родное» сырьё, которое подставляется по умолчанию. */
+export const DASTARKHAN_RAW_MATERIAL = "Сырьё Дастархан";
 
 /** Порядок и состав слотов сырья. */
 const ORDER = [
@@ -50,6 +59,9 @@ interface RawRule {
   /** Разрешить несколько строк сырья (кнопка «Добавить сырьё»). */
   multi?: boolean;
   matches: (item: ProductRead | MaterialRead) => boolean;
+  /** Подмешать в тот же слот материалы со склада сырья (напр. «Сырьё Дастархан»),
+   *  помимо основного пула. Такие варианты помечаются kind="material". */
+  alsoMaterials?: (m: MaterialRead) => boolean;
 }
 
 const RULES: Record<string, RawRule> = {
@@ -69,12 +81,16 @@ const RULES: Record<string, RawRule> = {
     matches: (p) => norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND),
   },
   [PRODUCT_CATEGORY.DASTARKHAN]: {
-    title: PRODUCT_CATEGORY.SPUNBOND,
+    title: `${DASTARKHAN_RAW_MATERIAL} · спанбонд`,
     kind: "product",
     defaultCategory: PRODUCT_CATEGORY.SPUNBOND,
     defaultSubcategory: SPUNBOND_SUBCATEGORY.DASTARKHAN_RAW,
-    // Дастархан тоже делают из любого спанбонда — подкатегорию не фильтруем.
+    // Дастархан делают из «Сырья Дастархан» (материал со склада сырья) — оно и
+    // подставляется по умолчанию; но допускается и любой спанбонд (иногда крутят из
+    // него). Можно указать несколько строк — и материал, и спанбонд в одном отчёте.
+    multi: true,
     matches: (p) => norm((p as ProductRead).category) === norm(PRODUCT_CATEGORY.SPUNBOND),
+    alsoMaterials: (m) => rawSubcategoryOf(m) === DASTARKHAN_RAW_MATERIAL,
   },
 };
 
@@ -82,6 +98,9 @@ export interface RawOption {
   value: string;
   label: string;
   sublabel?: string;
+  /** Тип ссылки для этого варианта: материал (сырьё со склада) или товар-полуфабрикат.
+   *  В смешанном слоте (Дастархан) варианты бывают обоих типов — см. buildMaterials. */
+  kind: RawKind;
 }
 
 export interface RawSlot {
@@ -116,6 +135,23 @@ export function rawSlotsForCategories(
     const rule = RULES[category];
     if (!rule) continue;
     const pool: (ProductRead | MaterialRead)[] = rule.kind === "material" ? materials : products;
+    const options: RawOption[] = pool.filter(rule.matches).map((item) => ({
+      value: item.id,
+      label: item.name,
+      sublabel: item.unit,
+      kind: rule.kind,
+    }));
+    // Материалы со склада сырья («Сырьё Дастархан») — впереди, чтобы «родное» сырьё
+    // было выбором по умолчанию (slot.options[0]), а спанбонд — запасным вариантом.
+    if (rule.alsoMaterials) {
+      const extra: RawOption[] = materials.filter(rule.alsoMaterials).map((m) => ({
+        value: m.id,
+        label: m.name,
+        sublabel: m.unit,
+        kind: "material" as RawKind,
+      }));
+      options.unshift(...extra);
+    }
     slots.push({
       category,
       title: rule.title,
@@ -123,11 +159,7 @@ export function rawSlotsForCategories(
       defaultCategory: rule.defaultCategory,
       defaultSubcategory: rule.defaultSubcategory,
       multi: rule.multi,
-      options: pool.filter(rule.matches).map((item) => ({
-        value: item.id,
-        label: item.name,
-        sublabel: item.unit,
-      })),
+      options,
     });
   }
   return slots;

@@ -127,8 +127,9 @@ export function ShiftReportForm({
   }, [initial.outputs, products]);
 
   // В режиме правки: разово раскладываем сохранённое сырьё по слотам. Слот один и
-  // определяется категорией выпуска отчёта: сырьё-материал (Полипропилен) → слот
-  // «Спанбонд», сырьё-полуфабрикат (любой спанбонд) → слот категории выпуска.
+  // определяется категорией выпуска отчёта — ключуем всё сырьё по ней. Слот может
+  // содержать и материалы (Полипропилен, «Сырьё Дастархан»), и товары-полуфабрикаты
+  // (спанбонд) — на save тип восстановит buildMaterials по options.
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current) return;
@@ -139,11 +140,13 @@ export function ShiftReportForm({
     if (products.length === 0) return;
     const firstOutputId = initial.outputs[0]?.product_id;
     const outputCat = firstOutputId ? categoryOfProduct(firstOutputId, products) : null;
+    if (!outputCat) {
+      seededRef.current = true;
+      return;
+    }
     const next: Record<string, RawLineState[]> = {};
     for (const line of initial.materials) {
-      const key = line.material_id ? PRODUCT_CATEGORY.SPUNBOND : outputCat;
-      if (!key) continue;
-      (next[key] ??= []).push({
+      (next[outputCat] ??= []).push({
         refId: line.material_id || line.product_id || "",
         quantity: line.quantity_used,
       });
@@ -210,8 +213,12 @@ export function ShiftReportForm({
         const refId = line.refId || (i === 0 ? slot.options[0]?.value : "") || "";
         const quantity = line.quantity ?? "";
         if (!refId || !(Number(quantity) > 0)) return;
+        // В слоте могут быть и материалы (сырьё со склада), и товары-полуфабрикаты —
+        // тип берём у конкретного выбранного варианта; для созданного «на ходу»
+        // спанбонда (его ещё нет в options) fallback — slot.kind.
+        const kind = slot.options.find((o) => o.value === refId)?.kind ?? slot.kind;
         result.push(
-          slot.kind === "material"
+          kind === "material"
             ? { material_id: refId, quantity_used: quantity }
             : { product_id: refId, quantity_used: quantity }
         );
