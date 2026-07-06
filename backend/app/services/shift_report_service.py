@@ -27,7 +27,12 @@ from app.core.enums import (
     UserRole,
     WarehouseType,
 )
-from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+)
 from app.models import (
     Material,
     Product,
@@ -507,13 +512,26 @@ async def reject(
 async def delete_report(session: AsyncSession, actor: User, report_id: uuid.UUID) -> None:
     report = await get_full(session, actor, report_id)
     if report.status is ShiftReportStatus.APPROVED:
-        raise ConflictError("Утверждённый отчёт удалить нельзя")
+        # Утверждённая смена уже провела склад — удалить её может только супер-админ.
+        # При удалении откатываем движения этого отчёта: выпуск и брак вычитаются со
+        # склада продукции, израсходованное сырьё возвращается на склад сырья. Если
+        # выпуск уже израсходован дальше по цепочке — reverse бросает 409, откат.
+        if actor.role is not UserRole.SUPER_ADMIN:
+            raise ForbiddenError("Утверждённую смену может удалить только супер-админ")
+        await stock_service.reverse_source_movements(
+            session, source_type=SourceType.SHIFT_REPORT, source_id=report.id
+        )
     await audit_service.log(
         session,
         user_id=actor.id,
         action="DELETE_SHIFT_REPORT",
         entity_type="ShiftReport",
         entity_id=report.id,
+        old={
+            "shift_date": str(report.shift_date),
+            "shift_type": report.shift_type.value,
+            "status": report.status.value,
+        },
     )
     await session.delete(report)
     await session.commit()

@@ -56,7 +56,8 @@ export default function ShiftReportDetailPage() {
   const router = useRouter();
   const role = useAuthStore((s) => s.user?.role);
   const userId = useAuthStore((s) => s.user?.id);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+  const isSuperAdmin = role === UserRole.SUPER_ADMIN;
+  const isAdmin = isSuperAdmin || role === UserRole.BOSS;
   // Утверждать/отклонять отчёты может ещё и зав. складом (правка/удаление — нет).
   const canApprove = isAdmin || role === UserRole.WAREHOUSE_MANAGER;
 
@@ -93,6 +94,10 @@ export default function ShiftReportDetailPage() {
   const canEditDraft = EDITABLE.has(report.status) && (isAdmin || isOwner);
   const canEditApproved = report.status === ShiftReportStatus.APPROVED && isAdmin;
   const canEdit = canEditDraft || canEditApproved;
+  // Неутверждённую смену удаляет SA/руководитель; утверждённую — только супер-админ
+  // (её движения по складу откатываются: выпуск минусуется, сырьё возвращается).
+  const isApproved = report.status === ShiftReportStatus.APPROVED;
+  const canDelete = isApproved ? isSuperAdmin : isAdmin;
   const m = shiftMetrics(report);
 
   function handleEditSubmit(values: ShiftReportFormValues) {
@@ -144,7 +149,11 @@ export default function ShiftReportDetailPage() {
 
   function handleDelete() {
     if (!report) return;
-    if (!window.confirm("Удалить сменный отчёт? Действие необратимо.")) return;
+    const message =
+      report.status === ShiftReportStatus.APPROVED
+        ? "Удалить утверждённую смену? Остатки склада будут скорректированы: выпуск и брак вычтутся со склада продукции, израсходованное сырьё вернётся. Действие необратимо."
+        : "Удалить сменный отчёт? Действие необратимо.";
+    if (!window.confirm(message)) return;
     deleteReport.mutate(report.id, {
       onSuccess: () => router.push("/shift-reports"),
       onError: (err) => setActionError(apiErrorMessage(err, "Не удалось удалить отчёт")),
@@ -216,14 +225,15 @@ export default function ShiftReportDetailPage() {
             </Button>
           </>
         )}
-        {isAdmin && report.status !== ShiftReportStatus.APPROVED && (
+        {canDelete && (
           <Button
             variant="secondary"
             size="sm"
+            disabled={deleteReport.isPending}
             onClick={handleDelete}
             className="ml-auto text-danger hover:bg-danger-bg"
           >
-            Удалить отчёт
+            {isApproved ? "Удалить смену" : "Удалить отчёт"}
           </Button>
         )}
       </div>

@@ -1,7 +1,8 @@
 """Сменные отчёты: /api/shift-reports.
 
 GET (все) — SA,B; GET /my — SM; POST — SM,SA,B; GET/PATCH/submit — владелец SM
-(SA,B тоже); approve/reject/DELETE — SA,B. Склад меняется только при approve.
+(SA,B тоже); approve/reject/DELETE — SA,B. Склад меняется при approve; удаление
+утверждённой смены (только SA) откатывает её движения по складу.
 """
 from __future__ import annotations
 

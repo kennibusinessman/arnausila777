@@ -86,9 +86,10 @@ export function useRejectShiftReport(reportId: string) {
 }
 
 export function useDeleteShiftReport() {
-  const qc = useQueryClient();
+  // Удаление утверждённой смены откатывает её движения по складу — обновляем остатки.
+  const invalidate = useInvalidateShiftReports();
   return useMutation({
     mutationFn: (reportId: string) => deleteShiftReport(reportId).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["shift-reports"] }),
+    onSuccess: invalidate,
   });
 }
