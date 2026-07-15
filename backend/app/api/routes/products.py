@@ -34,8 +34,12 @@ Reader = Annotated[
         )
     ),
 ]
-# Редактировать справочник могут только SA/B.
-Writer = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
+# Редактировать справочник могут SA/B, а также зав. складом — он правит карточку
+# товара (в т.ч. вес единицы) прямо со страницы «Остатки».
+Writer = Annotated[
+    User,
+    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
+]
 # Создавать товар могут ещё мастер смены и зав. складом — заводят новую продукцию
 # «на ходу» прямо из формы сменного отчёта (см. CreateProductModal во фронте).
 # Правка/удаление при этом остаются за SA/B.

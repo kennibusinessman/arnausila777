@@ -122,6 +122,12 @@ export default function StockPage() {
   const role = useAuthStore((s) => s.user?.role);
   const isSuperAdmin = role === UserRole.SUPER_ADMIN;
   const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+  const isWarehouseManager = role === UserRole.WAREHOUSE_MANAGER;
+
+  // Карточку товара открывают и правят SA/B, а также зав. складом (в т.ч. вес единицы).
+  // Карточка сырья остаётся за SA/B — у сырья веса нет, оно уже в кг.
+  const canOpenCard = (row: AggregatedBalance) =>
+    isAdmin || (isWarehouseManager && row.item_type === ItemType.PRODUCT);
 
   const [tab, setTab] = useState<"balances" | "movements">("balances");
   const [cardProduct, setCardProduct] = useState<ProductRead | null>(null);
@@ -589,7 +595,7 @@ export default function StockPage() {
                           key={row.key}
                           className={clsx(COLS, "w-full rounded-2xl px-3 py-3 transition-colors hover:bg-white/50")}
                         >
-                          {isAdmin ? (
+                          {canOpenCard(row) ? (
                             <button
                               type="button"
                               onClick={() => openCard(row)}
@@ -915,7 +921,7 @@ export default function StockPage() {
               >
                 <Plus className="h-4 w-4" strokeWidth={2.2} /> Приход / расход
               </Button>
-              {isAdmin && (
+              {canOpenCard(selectedBalance) && (
                 <Button
                   variant="secondary"
                   onClick={() => {
