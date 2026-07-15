@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { CreateProductModal } from "@/components/shiftReports/CreateProductModal";
 import { OutputsEditor, type OutputRow } from "@/components/shiftReports/OutputsEditor";
 import { RawAutoEditor, type RawLineState } from "@/components/shiftReports/RawAutoEditor";
+import { logActivity } from "@/lib/api/activity";
 import { useAuthStore } from "@/lib/auth/store";
 import { useMaterialOptions } from "@/lib/hooks/useMaterials";
 import { useProductOptions } from "@/lib/hooks/useProducts";
@@ -277,7 +278,9 @@ export function ShiftReportForm({
     });
     if (!printShiftLabels(labels)) {
       setLabelError("Браузер заблокировал окно печати — разрешите всплывающие окна для сайта.");
+      return;
     }
+    logActivity("button", "Печать этикеток");
   }
 
   const labelCount = outputs.reduce(

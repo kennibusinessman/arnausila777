@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { ActivityTracker } from "@/components/layout/ActivityTracker";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuthStore } from "@/lib/auth/store";
 
@@ -16,5 +17,10 @@ export default function AppGroupLayout({ children }: { children: React.ReactNode
   // AuthProvider уже показывает экран загрузки на время гидратации сессии.
   if (status !== "authenticated") return null;
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      <ActivityTracker />
+      {children}
+    </AppShell>
+  );
 }

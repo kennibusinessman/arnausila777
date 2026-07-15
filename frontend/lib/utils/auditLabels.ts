@@ -21,6 +21,9 @@ export const ACTION_LABELS: Record<string, string> = {
   USER_LOGIN: "Вход в систему",
   USER_LOGOUT: "Выход из системы",
 
+  VIEW_PAGE: "Открытие раздела",
+  CLICK_BUTTON: "Нажатие кнопки",
+
   CREATE_ORDER: "Создание заказа",
   UPDATE_ORDER: "Изменение заказа",
   PRICE_ORDER: "Простановка цен в заказе",
@@ -60,6 +63,8 @@ export const ACTION_LABELS: Record<string, string> = {
 /** Тип объекта → русское слово. */
 export const ENTITY_LABELS: Record<string, string> = {
   Auth: "Авторизация",
+  Page: "Страница",
+  Ui: "Интерфейс",
   Order: "Заказ",
   Expense: "Расход",
   Payment: "Платёж",
@@ -75,6 +80,8 @@ export const ENTITY_LABELS: Record<string, string> = {
 
 /** Ключ поля в «Было/Стало» → человеческая подпись. */
 const FIELD_LABELS: Record<string, string> = {
+  page: "Раздел",
+  button: "Кнопка",
   order_number: "Номер заказа",
   shipment_number: "Номер отгрузки",
   total_amount: "Сумма",
