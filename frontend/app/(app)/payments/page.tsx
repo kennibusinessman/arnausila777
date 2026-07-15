@@ -7,13 +7,14 @@ import {
   Pencil,
   Plus,
   Receipt,
+  Search,
   TrendingUp,
   Trash2,
   Users,
   Wallet,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Combobox } from "@/components/ui/Combobox";
 import { DetailModal } from "@/components/ui/DetailModal";
@@ -71,7 +72,18 @@ export default function PaymentsPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"asc" | "desc">("desc");
+
+  // Debounce: не дёргаем бэкенд на каждый символ — ждём паузу в наборе.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<PaymentRead | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -83,6 +95,7 @@ export default function PaymentsPage() {
     payment_method: paymentMethod || undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
+    search: search || undefined,
   };
 
   const { data, isLoading } = usePaymentsList({ page, size: PAGE_SIZE, sort, ...filters });
@@ -98,12 +111,13 @@ export default function PaymentsPage() {
   const clientOptions = (clients.data ?? []).map((c) => ({ value: c.id, label: c.name }));
   const orderOptions = (orders.data ?? []).map((o) => ({ value: o.id, label: o.order_number }));
 
-  const hasFilter = !!(dateFrom || dateTo || paymentMethod);
+  const hasFilter = !!(dateFrom || dateTo || paymentMethod || searchInput);
 
   function resetFilters() {
     setPaymentMethod("");
     setDateFrom("");
     setDateTo("");
+    setSearchInput("");
     setPage(1);
   }
 
@@ -216,6 +230,25 @@ export default function PaymentsPage() {
     <div className="flex h-full flex-col gap-4">
       {/* ===== FILTER / SORT BAR ===== */}
       <div className="glass flex flex-wrap items-center gap-3 rounded-2xl p-3">
+        <div className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 py-1.5">
+          <Search className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={2} />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Поиск: клиент, заказ, комментарий"
+            className="w-[210px] border-none bg-transparent text-[13px] text-text outline-none placeholder:text-muted"
+          />
+          {searchInput && (
+            <button
+              onClick={() => setSearchInput("")}
+              title="Очистить"
+              className="shrink-0 text-muted transition-colors hover:text-text"
+            >
+              <X className="h-[13px] w-[13px]" strokeWidth={2.2} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 py-1.5">
           <span className="text-[12px] text-muted">С</span>
           <input

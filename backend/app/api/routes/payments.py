@@ -38,12 +38,13 @@ async def list_payments(
     payment_method: Annotated[PaymentMethod | None, Query()] = None,
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
     sort: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> Page[PaymentRead]:
     items, total = await payment_service.list_payments(
         db, actor, params,
         client_id=client_id, order_id=order_id, payment_method=payment_method,
-        date_from=date_from, date_to=date_to, sort=sort,
+        date_from=date_from, date_to=date_to, search=search, sort=sort,
     )
     return Page[PaymentRead](
         items=[PaymentRead.model_validate(i) for i in items],
@@ -60,11 +61,12 @@ async def get_payments_summary(
     payment_method: Annotated[PaymentMethod | None, Query()] = None,
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
 ) -> PaymentSummary:
     return await payment_service.get_summary(
         db, actor,
         client_id=client_id, order_id=order_id, payment_method=payment_method,
-        date_from=date_from, date_to=date_to,
+        date_from=date_from, date_to=date_to, search=search,
     )
 
 

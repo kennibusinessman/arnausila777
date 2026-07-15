@@ -9,6 +9,7 @@ export interface PaymentFilterParams {
   payment_method?: PaymentMethod;
   date_from?: string;
   date_to?: string;
+  search?: string;
 }
 
 export interface ListPaymentsParams extends Partial<PageParams>, PaymentFilterParams {

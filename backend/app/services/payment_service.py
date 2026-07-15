@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -81,6 +81,7 @@ def _list_conditions(
     payment_method: PaymentMethod | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    search: str | None = None,
 ) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = [Payment.deleted_at.is_(None), *_scope(actor)]
     if client_id is not None:
@@ -93,6 +94,23 @@ def _list_conditions(
         conditions.append(Payment.payment_date >= date_from)
     if date_to is not None:
         conditions.append(Payment.payment_date <= date_to)
+    # Поиск по тому, что видно в списке: клиент (имя/компания), номер заказа,
+    # комментарий. Через подзапросы in_(), как в _scope, чтобы не дублировать строки.
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        conditions.append(
+            or_(
+                Payment.comment.ilike(term),
+                Payment.client_id.in_(
+                    select(Client.id).where(
+                        or_(Client.name.ilike(term), Client.company_name.ilike(term))
+                    )
+                ),
+                Payment.order_id.in_(
+                    select(Order.id).where(Order.order_number.ilike(term))
+                ),
+            )
+        )
     return conditions
 
 
@@ -106,6 +124,7 @@ async def list_payments(
     payment_method: PaymentMethod | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    search: str | None = None,
     sort: str = "desc",
 ) -> tuple[list[Payment], int]:
     conditions = _list_conditions(
@@ -115,6 +134,7 @@ async def list_payments(
         payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
+        search=search,
     )
     date_order = Payment.payment_date.asc() if sort == "asc" else Payment.payment_date.desc()
 
@@ -142,6 +162,7 @@ async def get_summary(
     payment_method: PaymentMethod | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    search: str | None = None,
 ) -> PaymentSummary:
     """Сумма/количество/средний платёж/число клиентов по тем же фильтрам — без пагинации."""
     conditions = _list_conditions(
@@ -151,6 +172,7 @@ async def get_summary(
         payment_method=payment_method,
         date_from=date_from,
         date_to=date_to,
+        search=search,
     )
 
     count, total_amount = (
