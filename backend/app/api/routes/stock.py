@@ -13,12 +13,21 @@ from app.api.deps import DbSession, Pagination
 from app.core.enums import ItemType, MovementType, SourceType, UserRole
 from app.core.exceptions import BadRequestError
 from app.core.permissions import require_roles
-from app.models import Material, Product, StockBalance, StockMovement, User
+from app.models import (
+    Material,
+    Order,
+    Product,
+    Shipment,
+    StockBalance,
+    StockMovement,
+    User,
+)
 from app.repositories.base import CRUDRepository
 from app.schemas.common import Message, Page
 from app.schemas.stock import (
     AdjustmentCreate,
     AdjustmentDirection,
+    MovementSourceRef,
     StockBalanceRead,
     StockMovementHistoryRead,
     StockMovementRead,
@@ -146,6 +155,34 @@ async def item_history(
         .all()
     )
 
+    # Отгрузка (SHIPMENT) сама по себе не имеет страницы — открываем её заказ.
+    # Резолвим одним запросом, только для НЕ удалённых заказов (у удалённого страницы нет).
+    shipment_ids = {
+        mv.source_id
+        for mv in movements
+        if mv.source_type is SourceType.SHIPMENT and mv.source_id is not None
+    }
+    order_by_shipment: dict[uuid.UUID, uuid.UUID] = {}
+    if shipment_ids:
+        result = await db.execute(
+            select(Shipment.id, Shipment.order_id)
+            .join(Order, Order.id == Shipment.order_id)
+            .where(Shipment.id.in_(shipment_ids), Order.deleted_at.is_(None))
+        )
+        order_by_shipment = {row[0]: row[1] for row in result.all()}
+
+    def _source_ref(mv: StockMovement) -> MovementSourceRef | None:
+        if mv.source_id is None:
+            return None
+        if mv.source_type is SourceType.SHIFT_REPORT:
+            return MovementSourceRef(kind="shift_report", id=mv.source_id)
+        if mv.source_type is SourceType.EXPENSE:
+            return MovementSourceRef(kind="expense", id=mv.source_id)
+        if mv.source_type is SourceType.SHIPMENT:
+            order_id = order_by_shipment.get(mv.source_id)
+            return MovementSourceRef(kind="order", id=order_id) if order_id else None
+        return None  # MANUAL_ADJUSTMENT и прочее — без документа
+
     running = Decimal("0")
     rows: list[StockMovementHistoryRead] = []
     for mv in movements:
@@ -155,6 +192,7 @@ async def item_history(
                 **StockMovementRead.model_validate(mv).model_dump(),
                 created_by_name=mv.creator.full_name if mv.creator else None,
                 balance_after=running,
+                source_ref=_source_ref(mv),
             )
         )
     rows.reverse()  # новые сверху — как в списке движений

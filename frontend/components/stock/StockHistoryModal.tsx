@@ -1,15 +1,29 @@
 "use client";
 
 import { clsx } from "clsx";
+import { ArrowUpRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { useStockItemHistory } from "@/lib/hooks/useStock";
 import { ItemType } from "@/lib/types/enums";
-import type { StockMovementHistoryRead } from "@/lib/types/stock";
+import type { MovementSourceRef, StockMovementHistoryRead } from "@/lib/types/stock";
 import { formatDateTime } from "@/lib/utils/format";
 import { movementTypeLabels, sourceTypeLabels } from "@/lib/utils/stockLabels";
+
+/** Куда ведёт документ-источник движения и как назвать переход. */
+const SOURCE_ROUTE: Record<MovementSourceRef["kind"], string> = {
+  order: "/orders",
+  shift_report: "/shift-reports",
+  expense: "/expenses",
+};
+const SOURCE_LABEL: Record<MovementSourceRef["kind"], string> = {
+  order: "Заказ",
+  shift_report: "Сменный отчёт",
+  expense: "Расход",
+};
 
 /** Позиция, по которой открывают историю движений (товар или материал). */
 export interface StockHistoryItem {
@@ -41,6 +55,7 @@ function signOf(row: StockMovementHistoryRead): 1 | -1 {
  * был на складе после него. Открывается из карточки товара/материала на «Остатках».
  */
 export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProps) {
+  const router = useRouter();
   const history = useStockItemHistory(
     open && item
       ? {
@@ -54,6 +69,12 @@ export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProp
   const rows = history.data ?? [];
   // rows[0] — самое новое движение, его balance_after = текущий остаток позиции.
   const latest = rows[0];
+
+  // Переход к документу-источнику: закрываем историю и уходим на его страницу.
+  function goToSource(ref: MovementSourceRef) {
+    onClose();
+    router.push(`${SOURCE_ROUTE[ref.kind]}/${ref.id}`);
+  }
 
   const columns: DataTableColumn<StockMovementHistoryRead>[] = [
     { header: "Дата", cell: (row) => formatDateTime(row.created_at) },
@@ -98,6 +119,18 @@ export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProp
     { header: "Кто", cell: (row) => row.created_by_name ?? "—" },
     { header: "Источник", cell: (row) => sourceTypeLabels[row.source_type] },
     { header: "Комментарий", cell: (row) => row.comment ?? "—" },
+    {
+      header: "Документ",
+      cell: (row) =>
+        row.source_ref ? (
+          <span className="inline-flex items-center gap-1 whitespace-nowrap font-medium text-primary">
+            {SOURCE_LABEL[row.source_ref.kind]}
+            <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.2} />
+          </span>
+        ) : (
+          <span className="text-muted">—</span>
+        ),
+    },
   ];
 
   return (
@@ -127,6 +160,8 @@ export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProp
               rows={rows}
               keyField={(row) => row.id}
               emptyMessage="Движений по этой позиции пока нет"
+              isRowInteractive={(row) => row.source_ref !== null}
+              onRowClick={(row) => row.source_ref && goToSource(row.source_ref)}
             />
           </div>
 
@@ -141,8 +176,9 @@ export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProp
                 const sign = signOf(row);
                 const after = Number(row.balance_after);
                 const before = after - sign * Number(row.quantity);
-                return (
-                  <div key={row.id} className="glass flex flex-col gap-2 rounded-3xl p-4">
+                const ref = row.source_ref;
+                const inner = (
+                  <>
                     <div className="flex items-center justify-between gap-2">
                       <Badge
                         label={movementTypeLabels[row.movement_type]}
@@ -170,6 +206,26 @@ export function StockHistoryModal({ open, item, onClose }: StockHistoryModalProp
                       <span>{row.created_by_name ?? "—"}</span>
                     </div>
                     {row.comment && <p className="text-[12.5px] text-text">{row.comment}</p>}
+                    {ref && (
+                      <span className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium text-primary">
+                        Открыть: {SOURCE_LABEL[ref.kind]}
+                        <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.2} />
+                      </span>
+                    )}
+                  </>
+                );
+                return ref ? (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => goToSource(ref)}
+                    className="glass flex w-full flex-col gap-2 rounded-3xl p-4 text-left transition-transform active:scale-[0.99]"
+                  >
+                    {inner}
+                  </button>
+                ) : (
+                  <div key={row.id} className="glass flex flex-col gap-2 rounded-3xl p-4">
+                    {inner}
                   </div>
                 );
               })

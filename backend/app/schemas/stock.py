@@ -48,13 +48,24 @@ class StockMovementRead(BaseModel):
     created_at: datetime
 
 
+class MovementSourceRef(BaseModel):
+    """Ссылка на документ-источник движения для перехода из истории склада.
+    kind — какая это страница (order/shift_report/expense), id — её идентификатор.
+    Для отгрузок (SHIPMENT) kind=order и id — заказ, к которому относится отгрузка."""
+
+    kind: str
+    id: uuid.UUID
+
+
 class StockMovementHistoryRead(StockMovementRead):
     """Строка истории движений одной позиции: то же, что StockMovementRead, плюс имя
-    автора движения и остаток после его проведения (нарастающим итогом по всем
-    складам — так же, как позиция агрегируется в списке остатков)."""
+    автора движения, остаток после его проведения (нарастающим итогом по всем
+    складам — так же, как позиция агрегируется в списке остатков) и ссылка на
+    документ-источник (для перехода в заказ/смену/расход)."""
 
     created_by_name: str | None = None
     balance_after: Decimal
+    source_ref: MovementSourceRef | None = None
 
 
 class AdjustmentCreate(BaseModel):

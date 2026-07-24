@@ -32,10 +32,17 @@ export interface StockMovementRead {
   created_at: string;
 }
 
-/** Строка истории движений позиции: движение + автор + остаток после проведения. */
+/** Ссылка на документ-источник движения (для перехода из истории склада). */
+export interface MovementSourceRef {
+  kind: "order" | "shift_report" | "expense";
+  id: string;
+}
+
+/** Строка истории движений позиции: движение + автор + остаток после + документ-источник. */
 export interface StockMovementHistoryRead extends StockMovementRead {
   created_by_name: string | null;
   balance_after: string;
+  source_ref: MovementSourceRef | null;
 }
 
 export interface AdjustmentCreate {

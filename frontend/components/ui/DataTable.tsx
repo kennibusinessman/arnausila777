@@ -13,6 +13,10 @@ interface DataTableProps<T> {
   keyField: (row: T) => string;
   emptyMessage?: string;
   footer?: ReactNode;
+  /** Клик по строке. Курсор-указатель ставится, если строка интерактивна (см. isRowInteractive). */
+  onRowClick?: (row: T) => void;
+  /** Какие строки кликабельны (по умолчанию — все, если задан onRowClick). */
+  isRowInteractive?: (row: T) => boolean;
 }
 
 export function DataTable<T>({
@@ -21,6 +25,8 @@ export function DataTable<T>({
   keyField,
   emptyMessage = "Нет данных",
   footer,
+  onRowClick,
+  isRowInteractive,
 }: DataTableProps<T>) {
   return (
     <div className="glass overflow-hidden rounded-3xl">
@@ -49,8 +55,14 @@ export function DataTable<T>({
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
-              <tr key={keyField(row)} className="transition-colors hover:bg-white/40">
+            rows.map((row) => {
+              const interactive = !!onRowClick && (!isRowInteractive || isRowInteractive(row));
+              return (
+              <tr
+                key={keyField(row)}
+                onClick={interactive ? () => onRowClick!(row) : undefined}
+                className={clsx("transition-colors hover:bg-white/40", interactive && "cursor-pointer")}
+              >
                 {columns.map((col) => (
                   <td
                     key={col.header}
@@ -63,7 +75,8 @@ export function DataTable<T>({
                   </td>
                 ))}
               </tr>
-            ))
+              );
+            })
           )}
         </tbody>
         </table>
