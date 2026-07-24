@@ -18,7 +18,7 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import ExpenseCategoryType, UserRole, WarehouseType
+from app.core.enums import ExpenseCategoryType, SourceType, UserRole, WarehouseType
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models import (
     Client,
@@ -41,7 +41,7 @@ from app.schemas.order import (
     OrderSummary,
     OrderUpdate,
 )
-from app.services import audit_service, shipment_service
+from app.services import audit_service, shipment_service, stock_service
 
 
 def _is_sales(actor: User) -> bool:
@@ -517,19 +517,23 @@ async def replace_order(
     session: AsyncSession, actor: User, order_id: uuid.UUID, data: OrderCreate
 ) -> Order:
     """Полная правка заказа (только SA/руководитель): состав, цены и шапка — с
-    пересчётом склада и долга. Прежняя отгрузка отменяется (RETURN_IN, товар назад
-    на склад), по новому составу создаётся новая (SALE_OUT). Атомарно: если под новый
-    состав не хватает остатка — InsufficientStockError (409), заказ не меняется.
-    Долг клиента считается по отгрузкам, поэтому пересчитывается автоматически."""
+    пересчётом склада и долга. Прежняя отгрузка отменяется — её списания (SALE_OUT)
+    удаляются, а остаток возвращается на склад; по новому составу создаётся новая
+    отгрузка (SALE_OUT). Возврат отдельной записью в журнал НЕ пишем, чтобы история
+    склада не засорялась парами «Продажа+Возврат» на каждой правке. Атомарно: если
+    под новый состав не хватает остатка — InsufficientStockError (409), заказ не
+    меняется. Долг клиента считается по отгрузкам и пересчитывается автоматически."""
     order = await get_full(session, actor, order_id)
     await _resolve_client(session, actor, data.client_id)
 
     now = datetime.now(timezone.utc)
-    # 1) Откатываем склад прежней отгрузки и помечаем её удалённой.
+    # 1) Откатываем склад прежней отгрузки (удаляем её движения) и помечаем удалённой.
     for shipment in order.shipments:
         if shipment.deleted_at is not None:
             continue
-        await shipment_service.reverse_shipment_stock(session, actor, shipment)
+        await stock_service.reverse_source_movements(
+            session, source_type=SourceType.SHIPMENT, source_id=shipment.id
+        )
         shipment.deleted_at = now
 
     # 2) Новый состав/цены и шапка. Полная правка всегда с ценами → требуем вес.
@@ -615,15 +619,18 @@ async def price_order(
 
 
 async def delete_order(session: AsyncSession, actor: User, order_id: uuid.UUID) -> None:
-    """Удаляет заказ и возвращает на склад всё, что было списано его отгрузкой
-    (RETURN_IN) — атомарно, одной транзакцией."""
+    """Удаляет заказ и возвращает на склад всё, что было списано его отгрузкой:
+    списания (SALE_OUT) удаляются, остаток восстанавливается. Отдельную запись
+    «Возврат» в журнал не пишем — атомарно, одной транзакцией."""
     order = await get_full(session, actor, order_id)
     now = datetime.now(timezone.utc)
 
     for shipment in order.shipments:
         if shipment.deleted_at is not None:
             continue
-        await shipment_service.reverse_shipment_stock(session, actor, shipment)
+        await stock_service.reverse_source_movements(
+            session, source_type=SourceType.SHIPMENT, source_id=shipment.id
+        )
         shipment.deleted_at = now
 
     order.deleted_at = now

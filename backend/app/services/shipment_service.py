@@ -8,8 +8,9 @@
 Перед списанием проверяется наличие на складе всего состава заказа; если чего-то
 не хватает — InsufficientStockError (409) с перечнем, какого именно товара и
 сколько недостаёт (транзакцию откатывает вызывающий код, заказ не сохраняется).
-Возврат на склад происходит при удалении заказа (reverse_shipment_stock, RETURN_IN).
-Номер: SHP-YYYYMMDD-NNNN.
+Возврат остатка при правке/удалении заказа делает order_service через
+stock_service.reverse_source_movements — старые списания удаляются, отдельной
+записи «Возврат» в журнал не пишем. Номер: SHP-YYYYMMDD-NNNN.
 """
 from __future__ import annotations
 
@@ -216,25 +217,3 @@ async def create_shipment_for_order(
         },
     )
     return shipment
-
-
-async def reverse_shipment_stock(
-    session: AsyncSession, actor: User, shipment: Shipment
-) -> None:
-    """Возвращает на склад всё, что было списано отгрузкой (RETURN_IN).
-
-    Используется при удалении заказа. Commit выполняет вызывающий код."""
-    for item in shipment.items:
-        await stock_service.apply_movement(
-            session,
-            warehouse_id=shipment.warehouse_id,
-            item_type=ItemType.PRODUCT,
-            movement_type=MovementType.RETURN_IN,
-            quantity=item.quantity,
-            unit=item.product.unit,
-            source_type=SourceType.SHIPMENT,
-            created_by=actor.id,
-            product_id=item.product_id,
-            source_id=shipment.id,
-            unit_cost=item.unit_price,
-        )
