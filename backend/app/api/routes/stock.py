@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, Pagination
@@ -140,15 +140,21 @@ async def item_history(
         if item_type is ItemType.PRODUCT
         else StockMovement.material_id == material_id
     )
-    # created_at одинаков у движений из одной транзакции (напр. утверждение смены) —
-    # id вторичным ключом даёт детерминированный порядок для нарастающего итога.
-    movements = (
+    # created_at одинаков у движений из одной транзакции (правка/удаление заказа
+    # создаёт Возврат и Продажу одновременно; утверждение смены — Выпуск и Брак).
+    # В пределах одной метки времени ставим приходы ПЕРЕД расходами — так это и
+    # происходит в коде (сначала откат RETURN_IN, затем новое списание SALE_OUT).
+    # Иначе при равном created_at порядок определялся бы случайным id, и колонка
+    # «было→стало» ныряла бы в ложный минус (реальный остаток в минус не уходит).
+    in_types = [mt for mt in MovementType if stock_service.movement_sign(mt) > 0]
+    sign_rank = case((StockMovement.movement_type.in_(in_types), 0), else_=1)
+    movements = list(
         (
             await db.execute(
                 select(StockMovement)
                 .options(joinedload(StockMovement.creator))
                 .where(StockMovement.item_type == item_type, id_filter)
-                .order_by(StockMovement.created_at.asc(), StockMovement.id.asc())
+                .order_by(StockMovement.created_at.asc(), sign_rank, StockMovement.id.asc())
             )
         )
         .scalars()
