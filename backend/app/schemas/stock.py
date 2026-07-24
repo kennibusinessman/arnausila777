@@ -48,6 +48,15 @@ class StockMovementRead(BaseModel):
     created_at: datetime
 
 
+class StockMovementHistoryRead(StockMovementRead):
+    """Строка истории движений одной позиции: то же, что StockMovementRead, плюс имя
+    автора движения и остаток после его проведения (нарастающим итогом по всем
+    складам — так же, как позиция агрегируется в списке остатков)."""
+
+    created_by_name: str | None = None
+    balance_after: Decimal
+
+
 class AdjustmentCreate(BaseModel):
     warehouse_id: uuid.UUID
     item_type: ItemType

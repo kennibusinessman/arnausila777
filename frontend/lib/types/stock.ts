@@ -32,6 +32,12 @@ export interface StockMovementRead {
   created_at: string;
 }
 
+/** Строка истории движений позиции: движение + автор + остаток после проведения. */
+export interface StockMovementHistoryRead extends StockMovementRead {
+  created_by_name: string | null;
+  balance_after: string;
+}
+
 export interface AdjustmentCreate {
   warehouse_id: string;
   item_type: ItemType;

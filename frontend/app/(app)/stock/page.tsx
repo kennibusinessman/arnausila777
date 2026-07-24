@@ -22,6 +22,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { ProductFormModal } from "@/components/products/ProductFormModal";
 import { MaterialFormModal } from "@/components/materials/MaterialFormModal";
+import { StockHistoryModal, type StockHistoryItem } from "@/components/stock/StockHistoryModal";
 import { useAuthStore } from "@/lib/auth/store";
 import { useMaterialOptions } from "@/lib/hooks/useMaterials";
 import { useProductOptions } from "@/lib/hooks/useProducts";
@@ -132,6 +133,7 @@ export default function StockPage() {
   const [tab, setTab] = useState<"balances" | "movements">("balances");
   const [cardProduct, setCardProduct] = useState<ProductRead | null>(null);
   const [cardMaterial, setCardMaterial] = useState<MaterialRead | null>(null);
+  const [historyItem, setHistoryItem] = useState<StockHistoryItem | null>(null);
   const [selectedBalance, setSelectedBalance] = useState<AggregatedBalance | null>(null);
   const [selectedMovement, setSelectedMovement] = useState<StockMovementRead | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -272,6 +274,13 @@ export default function StockPage() {
       const m = materialMap.get(row.material_id ?? "");
       if (m) setCardMaterial(m);
     }
+  }
+
+  // «Движения» — полная история склада по этой позиции (кто, когда, остаток после).
+  function openHistoryFor(row: AggregatedBalance) {
+    const id = (row.item_type === ItemType.PRODUCT ? row.product_id : row.material_id) ?? "";
+    if (!id) return;
+    setHistoryItem({ item_type: row.item_type, id, name: row.name, unit: row.unit });
   }
 
   // Клик по стрелке строки — корректировка по этой позиции (прих/расх).
@@ -921,6 +930,16 @@ export default function StockPage() {
               >
                 <Plus className="h-4 w-4" strokeWidth={2.2} /> Приход / расход
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const r = selectedBalance;
+                  setSelectedBalance(null);
+                  openHistoryFor(r);
+                }}
+              >
+                Движения
+              </Button>
               {canOpenCard(selectedBalance) && (
                 <Button
                   variant="secondary"
@@ -972,8 +991,25 @@ export default function StockPage() {
         }
       />
 
-      <ProductFormModal open={cardProduct !== null} product={cardProduct} onClose={() => setCardProduct(null)} />
-      <MaterialFormModal open={cardMaterial !== null} material={cardMaterial} onClose={() => setCardMaterial(null)} />
+      <ProductFormModal
+        open={cardProduct !== null}
+        product={cardProduct}
+        onClose={() => setCardProduct(null)}
+        onShowHistory={(p) => {
+          setCardProduct(null);
+          setHistoryItem({ item_type: ItemType.PRODUCT, id: p.id, name: p.name, unit: p.unit });
+        }}
+      />
+      <MaterialFormModal
+        open={cardMaterial !== null}
+        material={cardMaterial}
+        onClose={() => setCardMaterial(null)}
+        onShowHistory={(m) => {
+          setCardMaterial(null);
+          setHistoryItem({ item_type: ItemType.MATERIAL, id: m.id, name: m.name, unit: m.unit });
+        }}
+      />
+      <StockHistoryModal open={historyItem !== null} item={historyItem} onClose={() => setHistoryItem(null)} />
     </div>
   );
 }

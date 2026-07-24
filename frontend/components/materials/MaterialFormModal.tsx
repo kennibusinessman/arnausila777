@@ -26,13 +26,15 @@ interface MaterialFormModalProps {
   material: MaterialRead | null;
   onClose: () => void;
   onSaved?: (material: MaterialRead) => void;
+  /** Если задан и материал существует — показываем кнопку «Движения» (история склада). */
+  onShowHistory?: (material: MaterialRead) => void;
 }
 
 const inputClass =
   "w-full rounded-xl border-[1.5px] border-border bg-white/80 outline-none focus:border-primary/50 px-3 py-2 text-sm";
 
 /** Полная карточка материала в модалке. Используется на страницах «Сырьё» и «Остатки». */
-export function MaterialFormModal({ open, material, onClose, onSaved }: MaterialFormModalProps) {
+export function MaterialFormModal({ open, material, onClose, onSaved, onShowHistory }: MaterialFormModalProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const createMaterial = useCreateMaterial();
@@ -174,6 +176,16 @@ export function MaterialFormModal({ open, material, onClose, onSaved }: Material
           <Button type="submit" disabled={submitting}>
             {submitting ? "Сохранение…" : material ? "Сохранить" : "Создать"}
           </Button>
+          {material && onShowHistory && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onShowHistory(material)}
+              disabled={submitting}
+            >
+              Движения
+            </Button>
+          )}
           <Button type="button" variant="secondary" onClick={handleClose} disabled={submitting}>
             Отмена
           </Button>

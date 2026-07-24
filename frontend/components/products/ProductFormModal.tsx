@@ -40,6 +40,8 @@ interface ProductFormModalProps {
   product: ProductRead | null;
   onClose: () => void;
   onSaved?: (product: ProductRead) => void;
+  /** Если задан и товар существует — показываем кнопку «Движения» (история склада). */
+  onShowHistory?: (product: ProductRead) => void;
 }
 
 const inputClass =
@@ -47,7 +49,7 @@ const inputClass =
 
 /** Полная карточка товара в модалке: все поля редактируемы. Используется на страницах
  *  «Товары» и «Остатки» (клик по наименованию). */
-export function ProductFormModal({ open, product, onClose, onSaved }: ProductFormModalProps) {
+export function ProductFormModal({ open, product, onClose, onSaved, onShowHistory }: ProductFormModalProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const createProduct = useCreateProduct();
@@ -241,6 +243,16 @@ export function ProductFormModal({ open, product, onClose, onSaved }: ProductFor
           <Button type="submit" disabled={submitting}>
             {submitting ? "Сохранение…" : product ? "Сохранить" : "Создать"}
           </Button>
+          {product && onShowHistory && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onShowHistory(product)}
+              disabled={submitting}
+            >
+              Движения
+            </Button>
+          )}
           <Button type="button" variant="secondary" onClick={handleClose} disabled={submitting}>
             Отмена
           </Button>

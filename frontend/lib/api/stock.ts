@@ -1,7 +1,12 @@
 import { http } from "@/lib/api/http";
 import type { Message, Page, PageParams } from "@/lib/types/common";
 import type { ItemType, MovementType, SourceType } from "@/lib/types/enums";
-import type { AdjustmentCreate, StockBalanceRead, StockMovementRead } from "@/lib/types/stock";
+import type {
+  AdjustmentCreate,
+  StockBalanceRead,
+  StockMovementHistoryRead,
+  StockMovementRead,
+} from "@/lib/types/stock";
 
 export interface ListBalancesParams extends Partial<PageParams> {
   warehouse_id?: string;
@@ -24,6 +29,16 @@ export const listStockBalances = (params: ListBalancesParams = {}) =>
 
 export const listStockMovements = (params: ListMovementsParams = {}) =>
   http.get<Page<StockMovementRead>>("/stock/movements", { params });
+
+export interface ItemHistoryParams {
+  item_type: ItemType;
+  product_id?: string;
+  material_id?: string;
+}
+
+/** Полная история движений одной позиции (с автором и остатком после каждого). */
+export const listStockItemHistory = (params: ItemHistoryParams) =>
+  http.get<StockMovementHistoryRead[]>("/stock/history", { params });
 
 export const createStockAdjustment = (data: AdjustmentCreate) =>
   http.post<StockMovementRead>("/stock/adjustments", data);
