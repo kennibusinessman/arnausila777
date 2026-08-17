@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   getDebts,
+  getPeriodSummary,
   getPnL,
   getProduction,
   getSalesByProduct,
@@ -44,6 +45,13 @@ export function useSalesByProduct(params: PeriodParams) {
   return useQuery({
     queryKey: ["report-sales-by-product", params],
     queryFn: () => getSalesByProduct(params).then((r) => r.data),
+  });
+}
+
+export function usePeriodSummary(params: PeriodParams) {
+  return useQuery({
+    queryKey: ["report-period-summary", params],
+    queryFn: () => getPeriodSummary(params).then((r) => r.data),
   });
 }
 

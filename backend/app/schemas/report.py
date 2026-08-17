@@ -116,3 +116,51 @@ class StockMovementRow(BaseModel):
     total_in: Decimal            # Σ приходных движений за период
     total_out: Decimal           # Σ расходных движений за период
     balance: Decimal             # total_in − total_out (изменение за период)
+
+
+# --- Сводка за период (остаток на начало → выпуск → продажи → остаток на конец) ---
+
+class PeriodTotals(BaseModel):
+    """Итоги по категории (или по всему отчёту). Количества суммируются «как есть»,
+    поэтому в категории со смешанными единицами (Спанбонд: рулоны + кг) итог по
+    количеству — справочный; итог по деньгам (`sold_amount`) корректен всегда."""
+
+    opening_stock: Decimal
+    produced: Decimal
+    defect: Decimal
+    sold_quantity: Decimal
+    sold_amount: Decimal
+    other_movement: Decimal
+    closing_stock: Decimal
+
+
+class PeriodItemRow(BaseModel):
+    product_id: uuid.UUID
+    product_name: str
+    sku: str | None = None
+    category: str | None = None
+    subcategory: str | None = None
+    unit: str
+    opening_stock: Decimal       # остаток на начало периода (по всем складам)
+    produced: Decimal            # выпущено за период (утверждённые смены)
+    defect: Decimal              # брак за период (утверждённые смены)
+    sold_quantity: Decimal       # отгружено за период (позиции отгрузок)
+    sold_amount: Decimal         # Σ суммы позиций отгрузок за период
+    # Остальные движения (расход в производство, закупки, возвраты, корректировки).
+    # Считается как остаток, невязка балансовой формулы, поэтому строка всегда сходится:
+    #   opening + produced − defect − sold_quantity + other_movement = closing
+    other_movement: Decimal
+    closing_stock: Decimal       # остаток на конец периода
+
+
+class PeriodCategoryBlock(BaseModel):
+    category: str | None         # значение Product.category; None — без категории
+    rows: list[PeriodItemRow]
+    totals: PeriodTotals
+
+
+class PeriodSummaryResponse(BaseModel):
+    date_from: date | None
+    date_to: date | None
+    categories: list[PeriodCategoryBlock]
+    totals: PeriodTotals

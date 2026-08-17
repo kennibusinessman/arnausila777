@@ -56,6 +56,10 @@ from app.schemas.report import (
     DebtRow,
     DebtsResponse,
     ExpenseByCategoryRow,
+    PeriodCategoryBlock,
+    PeriodItemRow,
+    PeriodSummaryResponse,
+    PeriodTotals,
     PnLResponse,
     ProductionRow,
     RevenueExpenseTrendPoint,
@@ -77,6 +81,10 @@ _MOVEMENT_OUT = (
     MovementType.ADJUSTMENT_OUT,
     MovementType.DEFECT_OUT,
 )
+
+# Порядок категорий товара в сводке за период (совпадает с PRODUCT_CATEGORIES на
+# фронте). Категории вне списка идут после них по алфавиту, без категории — в конце.
+_CATEGORY_ORDER = ("Спанбонд", "Одноразовые простыни", "Дастархан")
 
 
 def _is_sales(actor: User) -> bool:
@@ -720,6 +728,172 @@ async def stock(
         )
     rows.sort(key=lambda r: (r.warehouse_name, r.item_name))
     return rows
+
+
+async def _product_stock_as_of(
+    session: AsyncSession, *, before: date | None = None, through: date | None = None
+) -> dict[uuid.UUID, Decimal]:
+    """Остаток готовой продукции на дату (сумма по всем складам), из журнала движений.
+
+    `before` — остаток на начало дня (строго до даты), `through` — на конец дня
+    (включительно). Ровно один из аргументов задаёт границу; без границ — остаток
+    за всё время (совпадает с кэшем StockBalance, см. stock_service.recalc_balances).
+    """
+    signed = func.coalesce(
+        func.sum(
+            case(
+                (StockMovement.movement_type.in_(_MOVEMENT_IN), StockMovement.quantity),
+                else_=-StockMovement.quantity,
+            )
+        ),
+        0,
+    )
+    conditions: list[ColumnElement[bool]] = [StockMovement.item_type == ItemType.PRODUCT]
+    if before is not None:
+        conditions.append(func.date(StockMovement.created_at) < before)
+    if through is not None:
+        conditions.append(func.date(StockMovement.created_at) <= through)
+
+    rows = (
+        await session.execute(
+            select(StockMovement.product_id, signed)
+            .where(*conditions)
+            .group_by(StockMovement.product_id)
+        )
+    ).all()
+    return {pid: Decimal(qty) for pid, qty in rows if pid is not None}
+
+
+def _category_sort_key(category: str | None) -> tuple[int, str]:
+    if category is None:
+        return (2, "")
+    if category in _CATEGORY_ORDER:
+        return (0, f"{_CATEGORY_ORDER.index(category):02d}")
+    return (1, category.lower())
+
+
+def _sum_totals(rows: list[PeriodItemRow]) -> PeriodTotals:
+    def total(field: str) -> Decimal:
+        return sum((getattr(r, field) for r in rows), Decimal("0"))
+
+    return PeriodTotals(
+        opening_stock=total("opening_stock"),
+        produced=total("produced"),
+        defect=total("defect"),
+        sold_quantity=total("sold_quantity"),
+        sold_amount=total("sold_amount"),
+        other_movement=total("other_movement"),
+        closing_stock=total("closing_stock"),
+    )
+
+
+async def period_summary(
+    session: AsyncSession, *, date_from: date | None, date_to: date | None
+) -> PeriodSummaryResponse:
+    """Сводка по готовой продукции за период, в разрезе категорий и наименований.
+
+    По каждому товару: остаток на начало периода → выпуск и брак за период →
+    отгружено (количество и сумма) → остаток на конец периода. Строка сходится:
+    `opening + produced − defect − sold_quantity + other_movement = closing`, где
+    other_movement — невязка (расход полуфабриката в производство, закупки,
+    возвраты, ручные корректировки, а также смены, утверждённые вне периода).
+
+    Остатки берутся из журнала движений по `created_at` (как в «Движении склада»),
+    выпуск — из утверждённых смен по `shift_date`, продажи — из позиций отгрузок
+    по `shipment_date`. Без date_from остаток на начало = 0 (период «всё время»).
+    """
+    opening = (
+        await _product_stock_as_of(session, before=date_from) if date_from is not None else {}
+    )
+    closing = await _product_stock_as_of(session, through=date_to)
+
+    produced_rows = (
+        await session.execute(
+            select(
+                ShiftReportOutput.product_id,
+                func.coalesce(func.sum(ShiftReportOutput.quantity), 0),
+                func.coalesce(func.sum(ShiftReportOutput.defect_quantity), 0),
+            )
+            .join(ShiftReport, ShiftReport.id == ShiftReportOutput.shift_report_id)
+            .where(
+                ShiftReport.status == ShiftReportStatus.APPROVED,
+                *_between(ShiftReport.shift_date, date_from, date_to),
+            )
+            .group_by(ShiftReportOutput.product_id)
+        )
+    ).all()
+    produced = {pid: (Decimal(qty), Decimal(defect)) for pid, qty, defect in produced_rows}
+
+    sold_rows = (
+        await session.execute(
+            select(
+                ShipmentItem.product_id,
+                func.coalesce(func.sum(ShipmentItem.quantity), 0),
+                func.coalesce(func.sum(ShipmentItem.total_price), 0),
+            )
+            .join(Shipment, Shipment.id == ShipmentItem.shipment_id)
+            .where(
+                Shipment.deleted_at.is_(None),
+                *_between(Shipment.shipment_date, date_from, date_to),
+            )
+            .group_by(ShipmentItem.product_id)
+        )
+    ).all()
+    sold = {pid: (Decimal(qty), Decimal(amount)) for pid, qty, amount in sold_rows}
+
+    product_ids = set(opening) | set(closing) | set(produced) | set(sold)
+    if not product_ids:
+        empty = _sum_totals([])
+        return PeriodSummaryResponse(
+            date_from=date_from, date_to=date_to, categories=[], totals=empty
+        )
+
+    # Удалённые товары тоже нужны: у них может быть история за период.
+    products = (
+        await session.execute(select(Product).where(Product.id.in_(product_ids)))
+    ).scalars().all()
+
+    by_category: dict[str | None, list[PeriodItemRow]] = {}
+    for p in products:
+        open_qty = opening.get(p.id, Decimal("0"))
+        close_qty = closing.get(p.id, Decimal("0"))
+        prod_qty, defect_qty = produced.get(p.id, (Decimal("0"), Decimal("0")))
+        sold_qty, sold_amount = sold.get(p.id, (Decimal("0"), Decimal("0")))
+        if not any((open_qty, close_qty, prod_qty, defect_qty, sold_qty, sold_amount)):
+            continue
+        by_category.setdefault(p.category, []).append(
+            PeriodItemRow(
+                product_id=p.id,
+                product_name=p.name,
+                sku=p.sku,
+                category=p.category,
+                subcategory=p.subcategory,
+                unit=p.unit,
+                opening_stock=open_qty,
+                produced=prod_qty,
+                defect=defect_qty,
+                sold_quantity=sold_qty,
+                sold_amount=sold_amount,
+                other_movement=close_qty - open_qty - prod_qty + defect_qty + sold_qty,
+                closing_stock=close_qty,
+            )
+        )
+
+    categories: list[PeriodCategoryBlock] = []
+    all_rows: list[PeriodItemRow] = []
+    for category in sorted(by_category, key=_category_sort_key):
+        rows = sorted(by_category[category], key=lambda r: ((r.subcategory or ""), r.product_name))
+        all_rows.extend(rows)
+        categories.append(
+            PeriodCategoryBlock(category=category, rows=rows, totals=_sum_totals(rows))
+        )
+
+    return PeriodSummaryResponse(
+        date_from=date_from,
+        date_to=date_to,
+        categories=categories,
+        totals=_sum_totals(all_rows),
+    )
 
 
 async def revenue_expense_trend(

@@ -100,3 +100,36 @@ export interface StockMovementRow {
   total_out: string;
   balance: string;
 }
+
+/** Сводка за период: остаток на начало → выпуск → продажи → остаток на конец. */
+export interface PeriodTotals {
+  opening_stock: string;
+  produced: string;
+  defect: string;
+  sold_quantity: string;
+  sold_amount: string;
+  other_movement: string;
+  closing_stock: string;
+}
+
+export interface PeriodItemRow extends PeriodTotals {
+  product_id: string;
+  product_name: string;
+  sku: string | null;
+  category: string | null;
+  subcategory: string | null;
+  unit: string;
+}
+
+export interface PeriodCategoryBlock {
+  category: string | null;
+  rows: PeriodItemRow[];
+  totals: PeriodTotals;
+}
+
+export interface PeriodSummaryResponse {
+  date_from: string | null;
+  date_to: string | null;
+  categories: PeriodCategoryBlock[];
+  totals: PeriodTotals;
+}

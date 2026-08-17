@@ -4,6 +4,7 @@ import type {
   DashboardResponse,
   DebtsResponse,
   ExpenseByCategoryRow,
+  PeriodSummaryResponse,
   PnLResponse,
   ProductionRow,
   RevenueExpenseTrendPoint,
@@ -41,6 +42,9 @@ export const getProduction = (params: PeriodParams = {}) =>
 
 export const getSalesByProduct = (params: PeriodParams = {}) =>
   http.get<SalesByProductRow[]>("/reports/sales-by-product", { params });
+
+export const getPeriodSummary = (params: PeriodParams = {}) =>
+  http.get<PeriodSummaryResponse>("/reports/period-summary", { params });
 
 export interface StockMovementParams extends PeriodParams {
   warehouse_id?: string;

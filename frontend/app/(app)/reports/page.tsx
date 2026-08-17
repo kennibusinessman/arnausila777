@@ -18,13 +18,14 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAuthStore } from "@/lib/auth/store";
 import { useDashboard, useRevenueExpenseTrend } from "@/lib/hooks/useDashboard";
 import { usePaymentsList, usePaymentsSummary } from "@/lib/hooks/usePayments";
 import {
   useDebts,
+  usePeriodSummary,
   usePnLReport,
   useProductionReport,
   useSalesByProduct,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/hooks/useReports";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
 import { ItemType, PaymentMethod, RevenueMode, ShiftReportStatus, ShiftType, UserRole } from "@/lib/types/enums";
+import type { PeriodCategoryBlock, PeriodItemRow, PeriodTotals } from "@/lib/types/report";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -41,6 +43,7 @@ import {
   formatNumber,
 } from "@/lib/utils/format";
 import { shiftMetrics } from "@/lib/utils/shiftMetrics";
+import { CATEGORY_COLOR, CATEGORY_SHORT } from "@/lib/utils/shiftRawRules";
 
 const PALETTE = ["#5b8def", "#8d6bff", "#3fc6c6", "#f0a23c", "#e87aa6", "#94a3b8"];
 const col = (i: number) => PALETTE[i % PALETTE.length] ?? PALETTE[0]!;
@@ -54,6 +57,7 @@ const monthLabel = (period: string) => {
 };
 
 type ReportId =
+  | "period"
   | "sales"
   | "topProducts"
   | "receivables"
@@ -64,6 +68,7 @@ type ReportId =
   | "production"
   | "stock";
 const REPORT_LABEL: Record<ReportId, string> = {
+  period: "За период",
   sales: "Продажи",
   topProducts: "Топ товаров",
   receivables: "Дебиторка",
@@ -87,25 +92,31 @@ const SHIFT_TYPE_LABEL: Record<ShiftType, string> = {
   [ShiftType.SHIFT_2]: "Смена 2",
 };
 
-type Period = "" | "week" | "month" | "quarter" | "year";
+type Period = "" | "thisMonth" | "week" | "month" | "quarter" | "year";
 const PERIOD_LABEL: Record<Period, string> = {
   "": "Всё время",
+  thisMonth: "Этот месяц",
   week: "Неделя",
   month: "Месяц",
   quarter: "Квартал",
   year: "Год",
 };
 
+/** Локальная дата в формате YYYY-MM-DD (toISOString сдвинул бы её на часовой пояс). */
+const isoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 function periodRange(p: Period): { from: string; to: string } {
   if (!p) return { from: "", to: "" };
   const today = new Date();
-  const to = today.toISOString().slice(0, 10);
+  const to = isoDate(today);
+  if (p === "thisMonth") return { from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to };
   const d = new Date(today);
   if (p === "week") d.setDate(d.getDate() - 7);
   else if (p === "month") d.setMonth(d.getMonth() - 1);
   else if (p === "quarter") d.setMonth(d.getMonth() - 3);
   else d.setFullYear(d.getFullYear() - 1);
-  return { from: d.toISOString().slice(0, 10), to };
+  return { from: isoDate(d), to };
 }
 
 interface FilterState {
@@ -121,6 +132,7 @@ export default function ReportsPage() {
   const reports = useMemo<ReportId[]>(() => {
     if (isAdmin)
       return [
+        "period",
         "sales",
         "topProducts",
         "clients",
@@ -149,8 +161,23 @@ export default function ReportsPage() {
     setTo(r.to);
   }
 
+  // «За период» строится от границ периода, поэтому при первом открытии он
+  // подставляется автоматически: текущий месяц (1-е число → сегодня). Дальше
+  // период задаёт пользователь — пресетами или датами, отчёт пересчитывается сам.
+  const periodAutofilled = useRef(false);
+  useEffect(() => {
+    if (report !== "period" || periodAutofilled.current) return;
+    periodAutofilled.current = true;
+    if (from || to) return;
+    const r = periodRange("thisMonth");
+    setPeriod("thisMonth");
+    setFrom(r.from);
+    setTo(r.to);
+  }, [report, from, to]);
+
   const filters: FilterState = { from, to, revenueMode };
-  const periodLabel = period ? PERIOD_LABEL[period] : "Всё время";
+  // Даты, выставленные вручную, — это не «Всё время»: пресет сбрасывается, но период есть.
+  const periodLabel = period ? PERIOD_LABEL[period] : from || to ? "Свой период" : "Всё время";
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -198,7 +225,7 @@ export default function ReportsPage() {
         )}
 
         <div className="flex gap-1 rounded-xl border border-white/70 bg-white/55 p-1">
-          {(["week", "month", "quarter", "year"] as Period[]).map((p) => (
+          {(["thisMonth", "week", "month", "quarter", "year"] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => applyPeriod(p)}
@@ -246,6 +273,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ===== REPORT BODY ===== */}
+      {report === "period" && <PeriodSummaryReport filters={filters} periodLabel={periodLabel} />}
       {report === "sales" && <SalesReport filters={filters} periodLabel={periodLabel} />}
       {report === "topProducts" && <TopProductsReport filters={filters} periodLabel={periodLabel} />}
       {report === "receivables" && <ReceivablesReport periodLabel={periodLabel} />}
@@ -409,12 +437,17 @@ function TableCard({
   headers,
   rows,
   empty,
+  minWidth,
 }: {
   title: string;
   grid: string;
   headers: TableHeader[];
   rows: { key: string; cells: Cell[] }[];
   empty: string;
+  /** Минимальная ширина таблицы (для широких отчётов): вместо сжатия колонок
+   *  на узких экранах включается горизонтальный скролл. По умолчанию — 680px
+   *  до lg, а на lg+ таблица подстраивается под ширину карточки. */
+  minWidth?: string;
 }) {
   return (
     <div className="glass flex min-h-0 flex-1 flex-col rounded-3xl p-5">
@@ -426,7 +459,10 @@ function TableCard({
       </div>
       {/* Десктоп (lg+) — таблица с горизонтальным скроллом */}
       <div className="hidden min-h-0 flex-1 overflow-x-auto lg:block">
-        <div className="flex h-full min-w-[680px] flex-col lg:min-w-0">
+        <div
+          className={clsx("flex h-full flex-col", !minWidth && "min-w-[680px] lg:min-w-0")}
+          style={minWidth ? { minWidth } : undefined}
+        >
       <div className="grid gap-3 border-b border-border px-2 pb-2.5" style={{ gridTemplateColumns: grid }}>
         {headers.map((h, i) => (
           <span
@@ -528,6 +564,235 @@ function topWithRest(items: Segment[], n: number): Segment[] {
 }
 
 /* ---------------- reports ---------------- */
+
+/** Количество: целые — без дробной части, дробные — до 3 знаков («1 240», «77,5»). */
+const fmtQty = (value: string | number) => {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(n);
+};
+
+type QtyField = keyof Omit<PeriodTotals, "sold_amount">;
+
+/**
+ * Итог по количеству с разбивкой по единицам — «1 240 рулон · 8 400 кг».
+ * Внутри категории единицы могут отличаться (Спанбонд: рулоны и кг у полуфабриката),
+ * поэтому складывать всё в одно число нельзя.
+ */
+function unitTotal(rows: PeriodItemRow[], field: QtyField): string {
+  const byUnit = new Map<string, number>();
+  for (const r of rows) {
+    const v = Number(r[field]);
+    if (!v) continue;
+    byUnit.set(r.unit, (byUnit.get(r.unit) ?? 0) + v);
+  }
+  if (byUnit.size === 0) return "0";
+  return [...byUnit.entries()]
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .map(([unit, v]) => `${fmtQty(v)} ${unit}`)
+    .join(" · ");
+}
+
+const categoryLabel = (category: string | null) =>
+  category === null ? "Без категории" : CATEGORY_SHORT[category] ?? category;
+const categoryColor = (category: string | null) =>
+  (category !== null ? CATEGORY_COLOR[category] : undefined) ?? "#94a3b8";
+
+/** Сводка по одной категории: начало → выпуск → продажи → конец. */
+function PeriodCategoryCard({ block }: { block: PeriodCategoryBlock }) {
+  const { rows, totals } = block;
+  const lines: { label: string; value: string; color?: string }[] = [
+    { label: "Остаток на начало", value: unitTotal(rows, "opening_stock") },
+    { label: "Выпущено", value: unitTotal(rows, "produced"), color: "#178a55" },
+    { label: "Брак", value: unitTotal(rows, "defect"), color: Number(totals.defect) ? "#c47d1f" : undefined },
+    { label: "Продано", value: unitTotal(rows, "sold_quantity") },
+    { label: "Сумма продаж", value: formatCurrency(totals.sold_amount), color: "#178a55" },
+    { label: "Прочий приход/расход", value: unitTotal(rows, "other_movement") },
+  ];
+  return (
+    <div className="glass flex flex-col rounded-3xl p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: categoryColor(block.category) }} />
+        <h3 className="min-w-0 flex-1 truncate text-[15px] font-bold tracking-tight text-text">
+          {categoryLabel(block.category)}
+        </h3>
+        <span className="shrink-0 rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
+          {rows.length} наим.
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {lines.map((l) => (
+          <div key={l.label} className="flex items-baseline justify-between gap-3">
+            <span className="shrink-0 text-[12.5px] text-muted">{l.label}</span>
+            <span
+              className="text-right text-[13px] font-semibold tabular-nums text-text"
+              style={l.color ? { color: l.color } : undefined}
+            >
+              {l.value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-border pt-2.5">
+        <span className="shrink-0 text-[12.5px] font-semibold text-text">Остаток на конец</span>
+        <span className="text-right text-[14px] font-bold tabular-nums text-text">
+          {unitTotal(rows, "closing_stock")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Сводка за период по категориям (Спанбонд / Простыни / Дастархан): остаток на
+ * начало периода → выпуск по наименованиям → продажи с итоговой суммой → остаток
+ * на конец. Строка сходится: начало + выпуск − брак − продано + прочее = конец.
+ */
+function PeriodSummaryReport({ filters, periodLabel }: { filters: FilterState; periodLabel: string }) {
+  const { data, isLoading } = usePeriodSummary({
+    date_from: filters.from || undefined,
+    date_to: filters.to || undefined,
+  });
+  if (isLoading) return <Loading />;
+
+  const blocks = data?.categories ?? [];
+  const totalSales = Number(data?.totals.sold_amount ?? 0);
+
+  const rangeLabel =
+    filters.from || filters.to
+      ? `${filters.from ? formatDate(filters.from) : "начало учёта"} — ${
+          filters.to ? formatDate(filters.to) : "сегодня"
+        }`
+      : "всё время (остаток на начало — нулевой)";
+
+  const kpis: Kpi[] = [
+    ...blocks.slice(0, 3).map((b) => ({
+      label: `Продажи: ${categoryLabel(b.category)}`,
+      value: formatCompactCurrency(b.totals.sold_amount),
+      icon: Package,
+      iconColor: categoryColor(b.category),
+      iconBg: `${categoryColor(b.category)}22`,
+    })),
+    {
+      label: "Итого продаж",
+      value: formatCompactCurrency(totalSales),
+      valueColor: "#178a55",
+      icon: Wallet,
+      iconColor: "#0ea5b7",
+      iconBg: "rgba(14,165,183,0.14)",
+    },
+  ];
+
+  // 9 колонок: имя не сжимается меньше 200px, остальное — фиксированные ширины,
+  // сумма которых даёт minWidth таблицы (ниже включается горизонтальный скролл).
+  const grid = "minmax(200px,1fr) 46px 92px 92px 76px 92px 118px 88px 92px";
+  const headers: TableHeader[] = [
+    { text: "Наименование" },
+    { text: "Ед." },
+    { text: "На начало", align: "right" },
+    { text: "Выпущено", align: "right" },
+    { text: "Брак", align: "right" },
+    { text: "Продано", align: "right" },
+    { text: "Сумма", align: "right" },
+    { text: "Прочее", align: "right" },
+    { text: "На конец", align: "right" },
+  ];
+  const muted = "tabular-nums text-text/30";
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+      <div className="glass flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-4 py-3 text-[12.5px]">
+        <span className="font-semibold text-text">Период:</span>
+        <span className="text-text">{rangeLabel}</span>
+        <span className="rounded-full border border-white/70 bg-white/55 px-2.5 py-0.5 text-[11.5px] font-medium text-muted">
+          {periodLabel}
+        </span>
+        <div className="flex-1" />
+        <span className="text-muted">
+          Выпуск — по утверждённым сменам, продажи — по отгрузкам, остатки — по движениям склада
+        </span>
+      </div>
+
+      <KpiStrip items={kpis} />
+
+      {blocks.length === 0 ? (
+        <div className="glass rounded-3xl py-14 text-center text-[13px] text-muted">
+          Нет движений, выпуска и продаж за период
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {blocks.map((b) => (
+              <PeriodCategoryCard key={b.category ?? "—"} block={b} />
+            ))}
+          </div>
+          {blocks.map((b) => (
+            // Обёртка гасит flex-1 у TableCard: таблицы растут по содержимому,
+            // а скроллится весь отчёт целиком, а не каждая таблица отдельно.
+            <div key={b.category ?? "—"}>
+              <TableCard
+                title={`${categoryLabel(b.category)} — по наименованиям`}
+                grid={grid}
+                headers={headers}
+                minWidth="920px"
+                empty="Нет данных за период"
+                rows={b.rows.map((r) => {
+                  const other = Number(r.other_movement);
+                  return {
+                    key: r.product_id,
+                    cells: [
+                      {
+                        node: (
+                          <span className="truncate">
+                            {r.product_name}
+                            {r.subcategory && r.subcategory !== r.category ? (
+                              <span className="text-muted"> · {r.subcategory}</span>
+                            ) : null}
+                          </span>
+                        ),
+                        className: "font-semibold",
+                      },
+                      { node: r.unit, className: "text-muted" },
+                      { node: fmtQty(r.opening_stock), align: "right", className: "tabular-nums text-text/70" },
+                      {
+                        node: Number(r.produced) ? fmtQty(r.produced) : "—",
+                        align: "right",
+                        className: Number(r.produced) ? "font-semibold tabular-nums text-success" : muted,
+                      },
+                      {
+                        node: Number(r.defect) ? fmtQty(r.defect) : "—",
+                        align: "right",
+                        className: Number(r.defect) ? "tabular-nums" : muted,
+                        style: Number(r.defect) ? { color: "#c47d1f" } : undefined,
+                      },
+                      {
+                        node: Number(r.sold_quantity) ? fmtQty(r.sold_quantity) : "—",
+                        align: "right",
+                        className: Number(r.sold_quantity) ? "font-semibold tabular-nums" : muted,
+                      },
+                      {
+                        node: Number(r.sold_amount) ? formatCurrency(r.sold_amount) : "—",
+                        align: "right",
+                        className: Number(r.sold_amount) ? "font-bold tabular-nums text-success" : muted,
+                      },
+                      {
+                        node: other ? fmtQty(other) : "—",
+                        align: "right",
+                        className: other ? "tabular-nums" : muted,
+                        style: other ? { color: other > 0 ? "#178a55" : "#bd4836" } : undefined,
+                      },
+                      { node: fmtQty(r.closing_stock), align: "right", className: "font-bold tabular-nums" },
+                    ],
+                  };
+                })}
+              />
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 
 function SalesReport({ filters, periodLabel }: { filters: FilterState; periodLabel: string }) {
   const params = {

@@ -1,7 +1,7 @@
 """Отчёты: /api/reports.
 
 debts — SA,B,SaM (SaM только свои клиенты); dashboard/pnl/expenses-by-category/
-revenue-expense-trend — SA,B; production — SA,B; stock — SA,B,WM.
+revenue-expense-trend — SA,B; production/period-summary — SA,B; stock — SA,B,WM.
 Параметры периода: date_from, date_to; revenue_mode=shipments|payments.
 """
 from __future__ import annotations
@@ -21,6 +21,7 @@ from app.schemas.report import (
     DashboardResponse,
     DebtsResponse,
     ExpenseByCategoryRow,
+    PeriodSummaryResponse,
     PnLResponse,
     ProductionRow,
     RevenueExpenseTrendPoint,
@@ -125,6 +126,17 @@ async def get_sales_by_product(
     date_to: DateTo = None,
 ) -> list[SalesByProductRow]:
     return await report_service.sales_by_product(db, date_from=date_from, date_to=date_to)
+
+
+@router.get("/period-summary", response_model=PeriodSummaryResponse)
+async def get_period_summary(
+    actor: Admin,
+    db: DbSession,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> PeriodSummaryResponse:
+    """Сводка за период по категориям: остаток на начало → выпуск → продажи → остаток на конец."""
+    return await report_service.period_summary(db, date_from=date_from, date_to=date_to)
 
 
 @router.get("/stock-movement", response_model=list[StockMovementRow])
