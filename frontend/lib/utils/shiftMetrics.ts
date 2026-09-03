@@ -8,13 +8,28 @@ export interface ShiftMetricsInput {
 
 const isKg = (u?: string | null) => (u ?? "").trim().toLowerCase() === "кг";
 
+/** Товар в том виде, в каком нужен для веса: единица + вес единицы. */
+export interface WeighedItem {
+  unit?: string | null;
+  base_weight?: string | number | null;
+}
+
+/**
+ * Вес количества в кг: quantity × base_weight, а если товар и так меряется в «кг» —
+ * само количество. 0 — если веса нет и единица не килограммы (штуки без веса
+ * единицы в тоннаж не попадают). Единое правило для смен, производства и отчётов.
+ */
+export function weightKg(quantity: string | number, item?: WeighedItem | null): number {
+  const q = Number(quantity) || 0;
+  const bw = Number(item?.base_weight ?? 0);
+  if (bw > 0) return q * bw;
+  if (isKg(item?.unit)) return q;
+  return 0;
+}
+
 /** Вес позиции выпуска в кг: quantity × base_weight (а если ед. уже «кг» — просто quantity). */
 function toKg(quantity: string, product?: OutputRead["product"]): number {
-  const q = Number(quantity) || 0;
-  const bw = Number(product?.base_weight ?? 0);
-  if (bw > 0) return q * bw;
-  if (isKg(product?.unit)) return q;
-  return 0;
+  return weightKg(quantity, product);
 }
 
 /**

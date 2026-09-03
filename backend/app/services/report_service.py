@@ -869,6 +869,7 @@ async def period_summary(
                 category=p.category,
                 subcategory=p.subcategory,
                 unit=p.unit,
+                base_weight=p.base_weight,
                 opening_stock=open_qty,
                 produced=prod_qty,
                 defect=defect_qty,

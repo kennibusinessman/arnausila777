@@ -41,8 +41,9 @@ import {
   formatDate,
   formatDayMonth,
   formatNumber,
+  formatWeight,
 } from "@/lib/utils/format";
-import { shiftMetrics } from "@/lib/utils/shiftMetrics";
+import { shiftMetrics, weightKg } from "@/lib/utils/shiftMetrics";
 import { CATEGORY_COLOR, CATEGORY_SHORT } from "@/lib/utils/shiftRawRules";
 
 const PALETTE = ["#5b8def", "#8d6bff", "#3fc6c6", "#f0a23c", "#e87aa6", "#94a3b8"];
@@ -593,6 +594,16 @@ function unitTotal(rows: PeriodItemRow[], field: QtyField): string {
     .join(" · ");
 }
 
+/**
+ * Σ веса в кг по колонке количества (выпуск/продажи). Штуки переводятся в кг через
+ * `base_weight`, товары в «кг» идут как есть — то же правило, что в сменах.
+ * Именно вес, а не `unitTotal`, позволяет сложить категорию со смешанными
+ * единицами (Спанбонд: кг у полуфабриката + рулоны/штуки у готового) в одно число.
+ */
+function weightTotal(rows: PeriodItemRow[], field: QtyField): number {
+  return rows.reduce((sum, r) => sum + weightKg(r[field], r), 0);
+}
+
 const categoryLabel = (category: string | null) =>
   category === null ? "Без категории" : CATEGORY_SHORT[category] ?? category;
 const categoryColor = (category: string | null) =>
@@ -601,11 +612,23 @@ const categoryColor = (category: string | null) =>
 /** Сводка по одной категории: начало → выпуск → продажи → конец. */
 function PeriodCategoryCard({ block }: { block: PeriodCategoryBlock }) {
   const { rows, totals } = block;
-  const lines: { label: string; value: string; color?: string }[] = [
+  const lines: { label: string; value: string; sub?: string; color?: string }[] = [
     { label: "Остаток на начало", value: unitTotal(rows, "opening_stock") },
-    { label: "Выпущено", value: unitTotal(rows, "produced"), color: "#178a55" },
+    // Выпуск и продажи — в килограммах: в категории смешаны кг (полуфабрикат) и
+    // штуки/рулоны, поэтому сумма количеств по единицам весом не была. Количество
+    // не теряем — оно уходит второй строкой под весом.
+    {
+      label: "Выпущено",
+      value: formatWeight(weightTotal(rows, "produced")),
+      sub: unitTotal(rows, "produced"),
+      color: "#178a55",
+    },
     { label: "Брак", value: unitTotal(rows, "defect"), color: Number(totals.defect) ? "#c47d1f" : undefined },
-    { label: "Продано", value: unitTotal(rows, "sold_quantity") },
+    {
+      label: "Продано",
+      value: formatWeight(weightTotal(rows, "sold_quantity")),
+      sub: unitTotal(rows, "sold_quantity"),
+    },
     { label: "Сумма продаж", value: formatCurrency(totals.sold_amount), color: "#178a55" },
     { label: "Прочий приход/расход", value: unitTotal(rows, "other_movement") },
   ];
@@ -624,11 +647,14 @@ function PeriodCategoryCard({ block }: { block: PeriodCategoryBlock }) {
         {lines.map((l) => (
           <div key={l.label} className="flex items-baseline justify-between gap-3">
             <span className="shrink-0 text-[12.5px] text-muted">{l.label}</span>
-            <span
-              className="text-right text-[13px] font-semibold tabular-nums text-text"
-              style={l.color ? { color: l.color } : undefined}
-            >
-              {l.value}
+            <span className="flex min-w-0 flex-col items-end text-right">
+              <span
+                className="text-[13px] font-semibold tabular-nums text-text"
+                style={l.color ? { color: l.color } : undefined}
+              >
+                {l.value}
+              </span>
+              {l.sub ? <span className="text-[11px] tabular-nums text-muted">{l.sub}</span> : null}
             </span>
           </div>
         ))}
@@ -683,14 +709,15 @@ function PeriodSummaryReport({ filters, periodLabel }: { filters: FilterState; p
     },
   ];
 
-  // 9 колонок: имя не сжимается меньше 200px, остальное — фиксированные ширины,
+  // 10 колонок: имя не сжимается меньше 200px, остальное — фиксированные ширины,
   // сумма которых даёт minWidth таблицы (ниже включается горизонтальный скролл).
-  const grid = "minmax(200px,1fr) 46px 92px 92px 76px 92px 118px 88px 92px";
+  const grid = "minmax(200px,1fr) 46px 92px 92px 98px 76px 92px 118px 88px 92px";
   const headers: TableHeader[] = [
     { text: "Наименование" },
     { text: "Ед." },
     { text: "На начало", align: "right" },
     { text: "Выпущено", align: "right" },
+    { text: "Вес выпуска", align: "right" },
     { text: "Брак", align: "right" },
     { text: "Продано", align: "right" },
     { text: "Сумма", align: "right" },
@@ -734,10 +761,12 @@ function PeriodSummaryReport({ filters, periodLabel }: { filters: FilterState; p
                 title={`${categoryLabel(b.category)} — по наименованиям`}
                 grid={grid}
                 headers={headers}
-                minWidth="920px"
+                minWidth="1018px"
                 empty="Нет данных за период"
                 rows={b.rows.map((r) => {
                   const other = Number(r.other_movement);
+                  // Вес выпуска: штуки/рулоны × вес единицы, товары в «кг» — как есть.
+                  const producedKg = weightKg(r.produced, r);
                   return {
                     key: r.product_id,
                     cells: [
@@ -758,6 +787,11 @@ function PeriodSummaryReport({ filters, periodLabel }: { filters: FilterState; p
                         node: Number(r.produced) ? fmtQty(r.produced) : "—",
                         align: "right",
                         className: Number(r.produced) ? "font-semibold tabular-nums text-success" : muted,
+                      },
+                      {
+                        node: producedKg ? formatWeight(producedKg) : "—",
+                        align: "right",
+                        className: producedKg ? "tabular-nums text-text/70" : muted,
                       },
                       {
                         node: Number(r.defect) ? fmtQty(r.defect) : "—",

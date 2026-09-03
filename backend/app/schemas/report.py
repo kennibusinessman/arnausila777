@@ -141,6 +141,9 @@ class PeriodItemRow(BaseModel):
     category: str | None = None
     subcategory: str | None = None
     unit: str
+    # Вес единицы (кг за шт/рулон) — фронт считает по нему вес выпуска и продаж.
+    # None у товаров, которые уже меряются в кг (там вес = само количество).
+    base_weight: Decimal | None = None
     opening_stock: Decimal       # остаток на начало периода (по всем складам)
     produced: Decimal            # выпущено за период (утверждённые смены)
     defect: Decimal              # брак за период (утверждённые смены)

@@ -119,6 +119,8 @@ export interface PeriodItemRow extends PeriodTotals {
   category: string | null;
   subcategory: string | null;
   unit: string;
+  /** Вес единицы, кг (null — товар и так меряется в кг либо вес не задан). */
+  base_weight: string | null;
 }
 
 export interface PeriodCategoryBlock {
