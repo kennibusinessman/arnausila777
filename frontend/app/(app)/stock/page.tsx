@@ -139,6 +139,7 @@ export default function StockPage() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [subcategoryFilter, setSubcategoryFilter] = useState<string | null>(null);
   const [noWeightOnly, setNoWeightOnly] = useState(false);
+  const [availability, setAvailability] = useState<"in" | "all">("in");
   const [movementType, setMovementType] = useState<MovementType | "">("");
   const [page, setPage] = useState(1);
   const [showAdjust, setShowAdjust] = useState(false);
@@ -207,7 +208,7 @@ export default function StockPage() {
   const isRawView = categoryFilter === RAW_MATERIAL_CATEGORY;
 
   // Фильтр по категории + подкатегории (Спанбонд → subcategory товара, Сырьё → category материала).
-  const sortedBalances = useMemo(() => {
+  const filteredBalances = useMemo<AggregatedBalance[]>(() => {
     let filtered: AggregatedBalance[];
     if (isRawView) {
       filtered = aggregatedBalances.filter((r) => r.item_type === ItemType.MATERIAL);
@@ -229,11 +230,24 @@ export default function StockPage() {
         (r) => r.item_type === ItemType.PRODUCT && (!r.base_weight || r.base_weight <= 0)
       );
     }
-    return [...filtered].sort((a, b) => {
+    return filtered;
+  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView, noWeightOnly]);
+
+  // Сколько позиций текущего раздела скрывает режим «В наличии» (нулевые и ушедшие в минус).
+  const outOfStockCount = useMemo(
+    () => filteredBalances.filter((r) => r.quantity <= 0).length,
+    [filteredBalances]
+  );
+
+  // «В наличии» — только позиции с остатком > 0, «Все» — включая нулевые и минусовые.
+  const sortedBalances = useMemo(() => {
+    const rows =
+      availability === "in" ? filteredBalances.filter((r) => r.quantity > 0) : filteredBalances;
+    return [...rows].sort((a, b) => {
       if (a.item_type !== b.item_type) return a.item_type === ItemType.PRODUCT ? -1 : 1;
       return a.name.localeCompare(b.name, "ru");
     });
-  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView, noWeightOnly]);
+  }, [filteredBalances, availability]);
 
   // KPI по текущему фильтру.
   const showWeight = categoryFilter !== DASTARKHAN;
@@ -512,6 +526,31 @@ export default function StockPage() {
               <Scale className="h-[14px] w-[14px]" strokeWidth={2} />
               Без веса{weightlessCount > 0 ? ` (${weightlessCount})` : ""}
             </button>
+            <span className="mx-0.5 hidden h-5 w-px self-center bg-black/10 sm:block" />
+            <div className="inline-flex rounded-xl bg-white/45 p-0.5">
+              {([
+                { v: "in", l: "В наличии", t: "Только позиции с остатком" },
+                {
+                  v: "all",
+                  l: `Все${outOfStockCount > 0 ? ` (+${outOfStockCount})` : ""}`,
+                  t: "Показать все позиции, включая нулевые",
+                },
+              ] as const).map((o) => (
+                <button
+                  key={o.v}
+                  onClick={() => setAvailability(o.v)}
+                  title={o.t}
+                  className={clsx(
+                    "rounded-lg px-3 py-1.5 text-[13px] transition-colors",
+                    availability === o.v
+                      ? "bg-white font-semibold text-text shadow-sm"
+                      : "font-medium text-muted hover:text-text"
+                  )}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* ===== SUBCATEGORY CHIPS (Спанбонд / Сырьё) ===== */}
