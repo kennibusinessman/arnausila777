@@ -2,9 +2,10 @@
 
 - create/update: только в DRAFT/REJECTED; SM работает лишь со своими отчётами.
 - submit: DRAFT/REJECTED → SUBMITTED.
-- approve (**атомарно**, одна транзакция): PRODUCTION_OUT по сырью →
-  PRODUCTION_IN по продукции → DEFECT_OUT по браку → APPROVED. Если сырья мало,
-  apply_movement бросает 409 и вся транзакция откатывается — склад не меняется.
+- approve (**атомарно**, одна транзакция): проверка остатков → PRODUCTION_OUT по
+  сырью → PRODUCTION_IN по продукции → DEFECT_OUT по браку → APPROVED. Если чего-то
+  мало, `_check_report_stock` бросает 409 со списком всех нехваток (а apply_movement
+  остаётся страховкой на гонки); транзакция откатывается — склад не меняется.
 - reject(comment): SUBMITTED → REJECTED (причина — в audit_log).
 Склад не выбирается в отчёте: сырьё списывается со склада RAW_MATERIALS/MIXED,
 продукция приходуется на FINISHED_GOODS/MIXED (или явный склад из approve).
@@ -13,11 +14,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.enums import (
     ItemType,
     MovementType,
@@ -31,6 +34,7 @@ from app.core.exceptions import (
     BadRequestError,
     ConflictError,
     ForbiddenError,
+    InsufficientStockError,
     NotFoundError,
 )
 from app.models import (
@@ -400,6 +404,94 @@ async def _resolve_report_warehouses(
     return raw_wh, finished_wh
 
 
+async def _check_report_stock(
+    session: AsyncSession,
+    report: ShiftReport,
+    raw_wh: uuid.UUID | None,
+    finished_wh: uuid.UUID | None,
+) -> None:
+    """Прогоняет то же движение склада, что и `_apply_report_stock`, но «на бумаге».
+
+    Нужна ради сообщения: `apply_movement` спотыкается на первой же нехватке, и
+    мастер узнаёт про остальные только по одной за попытку. Здесь считаются
+    проектные остатки в том же порядке (сырьё → выпуск → брак), поэтому брак
+    проверяется уже с учётом выпуска смены, и наружу уходит полный перечень.
+    При ALLOW_NEGATIVE_STOCK проверка выключена — единое правило со stock_service."""
+    if settings.ALLOW_NEGATIVE_STOCK:
+        return
+
+    projected: dict[tuple[uuid.UUID, ItemType, uuid.UUID], Decimal] = {}
+    shortages: list[str] = []
+
+    async def _balance(
+        wh: uuid.UUID, item_type: ItemType, item_id: uuid.UUID
+    ) -> Decimal:
+        key = (wh, item_type, item_id)
+        if key not in projected:
+            is_product = item_type is ItemType.PRODUCT
+            projected[key] = await stock_service.get_balance(
+                session,
+                wh,
+                item_type,
+                product_id=item_id if is_product else None,
+                material_id=None if is_product else item_id,
+            )
+        return projected[key]
+
+    async def _take(
+        wh: uuid.UUID,
+        item_type: ItemType,
+        item_id: uuid.UUID,
+        need: Decimal,
+        name: str,
+        unit: str,
+    ) -> None:
+        available = await _balance(wh, item_type, item_id)
+        if available < need:
+            shortages.append(
+                f"«{name}»: есть {available} {unit}, требуется {need} {unit}"
+            )
+        projected[(wh, item_type, item_id)] = available - need
+
+    for m in report.materials:
+        if m.material_id is not None:
+            await _take(
+                raw_wh,
+                ItemType.MATERIAL,
+                m.material_id,
+                m.quantity_used,
+                m.material.name,
+                m.material.unit,
+            )
+        else:
+            await _take(
+                finished_wh,
+                ItemType.PRODUCT,
+                m.product_id,
+                m.quantity_used,
+                m.product.name,
+                m.product.unit,
+            )
+
+    for o in report.outputs:
+        key = (finished_wh, ItemType.PRODUCT, o.product_id)
+        projected[key] = await _balance(*key) + o.quantity
+        if o.defect_quantity > 0:
+            await _take(
+                finished_wh,
+                ItemType.PRODUCT,
+                o.product_id,
+                o.defect_quantity,
+                o.product.name,
+                o.product.unit,
+            )
+
+    if shortages:
+        raise InsufficientStockError(
+            "Недостаточно остатка на складе: " + "; ".join(shortages)
+        )
+
+
 async def _apply_report_stock(
     session: AsyncSession,
     actor: User,
@@ -474,6 +566,7 @@ async def approve(
     raw_wh, finished_wh = await _resolve_report_warehouses(
         session, report, data.raw_warehouse_id, data.finished_warehouse_id
     )
+    await _check_report_stock(session, report, raw_wh, finished_wh)
     await _apply_report_stock(session, actor, report, raw_wh, finished_wh)
 
     report.status = ShiftReportStatus.APPROVED

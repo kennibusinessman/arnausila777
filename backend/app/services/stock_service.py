@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.enums import ItemType, MovementType, SourceType
 from app.core.exceptions import BadRequestError, InsufficientStockError, NotFoundError
-from app.models import StockBalance, StockMovement
+from app.models import Material, Product, StockBalance, StockMovement
 from app.services import audit_service
 
 # Знак движения: приход (+) или расход (−).
@@ -65,6 +65,24 @@ def _item_match(
         else StockBalance.material_id.is_(None)
     )
     return cond
+
+
+async def _item_label(
+    session: AsyncSession,
+    item_type: ItemType,
+    product_id: uuid.UUID | None,
+    material_id: uuid.UUID | None,
+) -> str:
+    """Название позиции для сообщений об ошибках — без него «есть 0, требуется 2»
+    не говорит, чего именно не хватает."""
+    obj: Product | Material | None = None
+    if item_type is ItemType.PRODUCT and product_id is not None:
+        obj = await session.get(Product, product_id)
+    elif item_type is ItemType.MATERIAL and material_id is not None:
+        obj = await session.get(Material, material_id)
+    if obj is not None:
+        return f"«{obj.name}»"
+    return str(product_id or material_id or "позиция")
 
 
 async def _get_balance_row(
@@ -121,8 +139,11 @@ async def apply_movement(
     new_quantity = current + quantity * sign
 
     if sign < 0 and not settings.ALLOW_NEGATIVE_STOCK and new_quantity < 0:
+        label = await _item_label(session, item_type, product_id, material_id)
+        suffix = f" {unit}" if unit else ""
         raise InsufficientStockError(
-            f"Недостаточно остатка: есть {current}, требуется {quantity}"
+            f"Недостаточно остатка {label}: "
+            f"есть {current}{suffix}, требуется {quantity}{suffix}"
         )
 
     total_cost = unit_cost * quantity if unit_cost is not None else None
@@ -178,9 +199,12 @@ async def delete_movement(
     reversed_quantity = current - movement.quantity * sign
 
     if reversed_quantity < 0 and not settings.ALLOW_NEGATIVE_STOCK:
+        label = await _item_label(
+            session, movement.item_type, movement.product_id, movement.material_id
+        )
         raise InsufficientStockError(
-            f"Удаление сделает остаток отрицательным: сейчас {current}, "
-            f"после удаления было бы {reversed_quantity}"
+            f"Удаление сделает остаток {label} отрицательным: "
+            f"сейчас {current}, после удаления было бы {reversed_quantity}"
         )
 
     warehouse_id, movement_type, quantity = (
