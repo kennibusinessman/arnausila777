@@ -24,12 +24,12 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Spinner } from "@/components/ui/Spinner";
 import { CreateExpenseModal } from "@/components/expenses/CreateExpenseModal";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useExpenseCategoryOptions } from "@/lib/hooks/useExpenseCategories";
 import { useDeleteExpense, useExpensesList, useExpensesSummary } from "@/lib/hooks/useExpenses";
 import type { ExpenseListItem } from "@/lib/types/expense";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import { categoryColor } from "@/lib/utils/expenseCategoryColors";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 
@@ -37,7 +37,7 @@ const PAGE_SIZE = 20;
 
 export default function ExpensesPage() {
   const router = useRouter();
-  const isSuperAdmin = useAuthStore((s) => s.user?.role) === UserRole.SUPER_ADMIN;
+  const canDelete = useCan(Permission.EXPENSES_DELETE);
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
   const [dateFrom, setDateFrom] = useState("");
@@ -149,7 +149,7 @@ export default function ExpensesPage() {
             >
               <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
             </Link>
-            {isSuperAdmin && (
+            {canDelete && (
               <button
                 onClick={() => handleDelete(row)}
                 disabled={deleteExpense.isPending}
@@ -414,7 +414,7 @@ export default function ExpensesPage() {
                 {selected.order_id ? "К заказу" : "Открыть полностью"}
                 <ChevronRight className="h-4 w-4" strokeWidth={2} />
               </Link>
-              {isSuperAdmin && !selected.order_id && (
+              {canDelete && !selected.order_id && (
                 <Button
                   variant="danger"
                   onClick={() => {

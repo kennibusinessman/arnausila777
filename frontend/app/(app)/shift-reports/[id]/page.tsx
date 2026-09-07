@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Spinner } from "@/components/ui/Spinner";
 import { ShiftReportForm, type ShiftReportFormValues } from "@/components/shiftReports/ShiftReportForm";
+import { useCan } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import {
   useApproveShiftReport,
@@ -20,7 +21,7 @@ import {
 } from "@/lib/hooks/useShiftReports";
 import { useWarehouseOptions } from "@/lib/hooks/useWarehouses";
 import { apiErrorMessage } from "@/lib/api/http";
-import { ShiftReportStatus, UserRole } from "@/lib/types/enums";
+import { Permission, ShiftReportStatus, UserRole } from "@/lib/types/enums";
 import type { OutputRead, ShiftMaterialRead } from "@/lib/types/shiftReport";
 import { formatDateTime, formatNumber } from "@/lib/utils/format";
 import { shiftMetrics } from "@/lib/utils/shiftMetrics";
@@ -58,8 +59,8 @@ export default function ShiftReportDetailPage() {
   const userId = useAuthStore((s) => s.user?.id);
   const isSuperAdmin = role === UserRole.SUPER_ADMIN;
   const isAdmin = isSuperAdmin || role === UserRole.BOSS;
-  // Утверждать/отклонять отчёты может ещё и зав. складом (правка/удаление — нет).
-  const canApprove = isAdmin || role === UserRole.WAREHOUSE_MANAGER;
+  const canApprove = useCan(Permission.SHIFT_REPORTS_APPROVE);
+  const canDeleteReport = useCan(Permission.SHIFT_REPORTS_DELETE);
 
   const { data: report, isLoading, isError, error } = useShiftReport(reportId);
   const updateReport = useUpdateShiftReport(reportId);
@@ -97,7 +98,8 @@ export default function ShiftReportDetailPage() {
   // Неутверждённую смену удаляет SA/руководитель; утверждённую — только супер-админ
   // (её движения по складу откатываются: выпуск минусуется, сырьё возвращается).
   const isApproved = report.status === ShiftReportStatus.APPROVED;
-  const canDelete = isApproved ? isSuperAdmin : isAdmin;
+  // Утверждённую смену откатывает по складу только супер-админ (сервис проверяет роль).
+  const canDelete = canDeleteReport && (!isApproved || isSuperAdmin);
   const m = shiftMetrics(report);
 
   function handleEditSubmit(values: ShiftReportFormValues) {

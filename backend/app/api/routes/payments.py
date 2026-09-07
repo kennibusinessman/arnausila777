@@ -1,6 +1,7 @@
 """Оплаты: /api/payments.
 
-GET/POST — SA,B,SaM (SaM только свои клиенты); PATCH/DELETE — SA,B.
+Права: payments.view, payments.create, payments.edit (правка и удаление).
+Менеджер по продажам видит только своих клиентов (scope в сервисе).
 Долг не хранится — см. /api/reports/debts.
 """
 from __future__ import annotations
@@ -12,8 +13,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import PaymentMethod, UserRole
-from app.core.permissions import require_roles
+from app.core.access import Permission
+from app.core.enums import PaymentMethod
+from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.common import Message, Page
 from app.schemas.payment import PaymentCreate, PaymentRead, PaymentSummary, PaymentUpdate
@@ -21,16 +23,14 @@ from app.services import payment_service
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
-Manager = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
-]
-Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
+Reader = Annotated[User, Depends(require_permissions(Permission.PAYMENTS_VIEW))]
+Creator = Annotated[User, Depends(require_permissions(Permission.PAYMENTS_CREATE))]
+Editor = Annotated[User, Depends(require_permissions(Permission.PAYMENTS_EDIT))]
 
 
 @router.get("", response_model=Page[PaymentRead])
 async def list_payments(
-    actor: Manager,
+    actor: Reader,
     db: DbSession,
     params: Pagination,
     client_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -54,7 +54,7 @@ async def list_payments(
 
 @router.get("/summary", response_model=PaymentSummary)
 async def get_payments_summary(
-    actor: Manager,
+    actor: Reader,
     db: DbSession,
     client_id: Annotated[uuid.UUID | None, Query()] = None,
     order_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -71,26 +71,26 @@ async def get_payments_summary(
 
 
 @router.post("", response_model=PaymentRead, status_code=201)
-async def create_payment(data: PaymentCreate, actor: Manager, db: DbSession) -> PaymentRead:
+async def create_payment(data: PaymentCreate, actor: Creator, db: DbSession) -> PaymentRead:
     payment = await payment_service.create_payment(db, actor, data)
     return PaymentRead.model_validate(payment)
 
 
 @router.get("/{payment_id}", response_model=PaymentRead)
-async def get_payment(payment_id: uuid.UUID, actor: Manager, db: DbSession) -> PaymentRead:
+async def get_payment(payment_id: uuid.UUID, actor: Reader, db: DbSession) -> PaymentRead:
     payment = await payment_service.get_full(db, actor, payment_id)
     return PaymentRead.model_validate(payment)
 
 
 @router.patch("/{payment_id}", response_model=PaymentRead)
 async def update_payment(
-    payment_id: uuid.UUID, data: PaymentUpdate, actor: Admin, db: DbSession
+    payment_id: uuid.UUID, data: PaymentUpdate, actor: Editor, db: DbSession
 ) -> PaymentRead:
     payment = await payment_service.update_payment(db, actor, payment_id, data)
     return PaymentRead.model_validate(payment)
 
 
 @router.delete("/{payment_id}", response_model=Message)
-async def delete_payment(payment_id: uuid.UUID, actor: Admin, db: DbSession) -> Message:
+async def delete_payment(payment_id: uuid.UUID, actor: Editor, db: DbSession) -> Message:
     await payment_service.delete_payment(db, actor, payment_id)
     return Message(detail="Оплата удалена")

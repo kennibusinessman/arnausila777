@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import UserRole
+from app.core.access import Permission
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.permissions import require_roles
+from app.core.permissions import require_permissions
 from app.models import Product, User
 from app.repositories.base import CRUDRepository
 from app.schemas.common import Message, Page
@@ -21,41 +21,13 @@ router = APIRouter(prefix="/products", tags=["products"])
 repo = CRUDRepository(Product, soft_delete=True)
 
 # Продукцию видят все операционные роли (нужна для форм заказа/отгрузки/склада), а
-# также мастер смены — он выбирает выпуск и сырьё-спанбонд в сменном отчёте.
-Reader = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.WAREHOUSE_MANAGER,
-            UserRole.SALES_MANAGER,
-            UserRole.SHIFT_MASTER,
-        )
-    ),
-]
-# Редактировать справочник могут SA/B, а также зав. складом — он правит карточку
-# товара (в т.ч. вес единицы) прямо со страницы «Остатки».
-Writer = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
-]
-# Создавать товар могут ещё мастер смены и зав. складом — заводят новую продукцию
-# «на ходу» прямо из формы сменного отчёта (см. CreateProductModal во фронте).
-# Правка/удаление при этом остаются за SA/B.
-Creator = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.SHIFT_MASTER,
-            UserRole.WAREHOUSE_MANAGER,
-        )
-    ),
-]
-# Удаление — расширенное право, только супер-админ.
-SuperAdminUser = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN))]
+# Справочник читает и мастер смены — он выбирает выпуск и сырьё-спанбонд в
+# сменном отчёте; заводить товар «на ходу» из формы отчёта тоже может он и
+# зав. складом (см. CreateProductModal во фронте).
+Reader = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_VIEW))]
+Writer = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_EDIT))]
+Creator = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_CREATE))]
+Remover = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_DELETE))]
 
 
 @router.get("", response_model=Page[ProductRead])
@@ -129,7 +101,7 @@ async def update_product(
 
 
 @router.delete("/{product_id}", response_model=Message)
-async def delete_product(product_id: uuid.UUID, actor: SuperAdminUser, db: DbSession) -> Message:
+async def delete_product(product_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     obj = await repo.get(db, product_id)
     if obj is None:
         raise NotFoundError("Товар не найден")

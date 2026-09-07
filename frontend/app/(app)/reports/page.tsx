@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "@/components/ui/Spinner";
+import { hasPermission } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import { useDashboard, useRevenueExpenseTrend } from "@/lib/hooks/useDashboard";
 import { usePaymentsList, usePaymentsSummary } from "@/lib/hooks/usePayments";
@@ -33,7 +34,7 @@ import {
   useStockReport,
 } from "@/lib/hooks/useReports";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
-import { ItemType, PaymentMethod, RevenueMode, ShiftReportStatus, ShiftType, UserRole } from "@/lib/types/enums";
+import { ItemType, PaymentMethod, Permission, RevenueMode, ShiftReportStatus, ShiftType } from "@/lib/types/enums";
 import type { PeriodCategoryBlock, PeriodItemRow, PeriodTotals } from "@/lib/types/report";
 import {
   formatCompactCurrency,
@@ -126,28 +127,42 @@ interface FilterState {
   revenueMode: RevenueMode;
 }
 
-export default function ReportsPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+/** Право, открывающее вкладку отчёта (порядок вкладок — порядок в списке). */
+const REPORT_PERMISSION: Record<ReportId, Permission> = {
+  period: Permission.REPORTS_FINANCE,
+  sales: Permission.REPORTS_FINANCE,
+  topProducts: Permission.REPORTS_FINANCE,
+  clients: Permission.CLIENTS_VIEW_DETAILS,
+  receivables: Permission.REPORTS_DEBTS,
+  movement: Permission.REPORTS_STOCK,
+  payments: Permission.PAYMENTS_VIEW,
+  shifts: Permission.SHIFT_REPORTS_VIEW_ALL,
+  production: Permission.REPORTS_PRODUCTION,
+  stock: Permission.REPORTS_STOCK,
+};
 
-  const reports = useMemo<ReportId[]>(() => {
-    if (isAdmin)
-      return [
-        "period",
-        "sales",
-        "topProducts",
-        "clients",
-        "receivables",
-        "movement",
-        "payments",
-        "shifts",
-        "production",
-        "stock",
-      ];
-    if (role === UserRole.SALES_MANAGER) return ["receivables", "clients", "payments"];
-    if (role === UserRole.WAREHOUSE_MANAGER) return ["production", "stock", "movement"];
-    return [];
-  }, [isAdmin, role]);
+const REPORT_ORDER: ReportId[] = [
+  "period",
+  "sales",
+  "topProducts",
+  "clients",
+  "receivables",
+  "movement",
+  "payments",
+  "shifts",
+  "production",
+  "stock",
+];
+
+export default function ReportsPage() {
+  const user = useAuthStore((s) => s.user);
+
+  // Набор вкладок собирается из прав: супер-админ может выдать отдельный отчёт
+  // кому угодно, и вкладка появится сама.
+  const reports = useMemo<ReportId[]>(
+    () => REPORT_ORDER.filter((id) => hasPermission(user, REPORT_PERMISSION[id])),
+    [user]
+  );
 
   const [report, setReport] = useState<ReportId>(reports[0] ?? "receivables");
   const [period, setPeriod] = useState<Period>("");

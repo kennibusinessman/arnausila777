@@ -23,7 +23,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { ProductFormModal } from "@/components/products/ProductFormModal";
 import { MaterialFormModal } from "@/components/materials/MaterialFormModal";
 import { StockHistoryModal, type StockHistoryItem } from "@/components/stock/StockHistoryModal";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useMaterialOptions } from "@/lib/hooks/useMaterials";
 import { useProductOptions } from "@/lib/hooks/useProducts";
 import {
@@ -37,7 +37,7 @@ import { apiErrorMessage } from "@/lib/api/http";
 import { AdjustmentDirection, type StockMovementRead } from "@/lib/types/stock";
 import type { ProductRead } from "@/lib/types/product";
 import type { MaterialRead } from "@/lib/types/material";
-import { ItemType, MovementType, UserRole } from "@/lib/types/enums";
+import { ItemType, MovementType, Permission } from "@/lib/types/enums";
 import { formatDateTime, formatNumber, formatWeight } from "@/lib/utils/format";
 import { movementTypeLabels, sourceTypeLabels } from "@/lib/utils/stockLabels";
 import {
@@ -120,15 +120,14 @@ function weightKgOf(row: AggregatedBalance): number | null {
 }
 
 export default function StockPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isSuperAdmin = role === UserRole.SUPER_ADMIN;
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
-  const isWarehouseManager = role === UserRole.WAREHOUSE_MANAGER;
+  const canDeleteMovement = useCan(Permission.STOCK_DELETE_MOVEMENT);
+  const canAdjust = useCan(Permission.STOCK_ADJUST);
+  const canEditProduct = useCan(Permission.PRODUCTS_EDIT);
+  const canEditMaterial = useCan(Permission.MATERIALS_MANAGE);
 
-  // Карточку товара открывают и правят SA/B, а также зав. складом (в т.ч. вес единицы).
-  // Карточка сырья остаётся за SA/B — у сырья веса нет, оно уже в кг.
+  // Карточка открывается на правку, поэтому право берём по виду позиции.
   const canOpenCard = (row: AggregatedBalance) =>
-    isAdmin || (isWarehouseManager && row.item_type === ItemType.PRODUCT);
+    row.item_type === ItemType.PRODUCT ? canEditProduct : canEditMaterial;
 
   const [tab, setTab] = useState<"balances" | "movements">("balances");
   const [cardProduct, setCardProduct] = useState<ProductRead | null>(null);
@@ -337,7 +336,7 @@ export default function StockPage() {
     { header: "Кол-во", align: "right", cell: (row) => `${formatNumber(row.quantity, 3)} ${row.unit}` },
     { header: "Источник", cell: (row) => sourceTypeLabels[row.source_type] },
     { header: "Комментарий", cell: (row) => row.comment ?? "—" },
-    ...(isSuperAdmin
+    ...(canDeleteMovement
       ? [
           {
             header: "",
@@ -484,10 +483,12 @@ export default function StockPage() {
 
         <div className="flex-1" />
 
-        <Button onClick={openAdjust}>
-          <Plus className="h-4 w-4" strokeWidth={2.4} />
-          Оформить приход
-        </Button>
+        {canAdjust && (
+          <Button onClick={openAdjust}>
+            <Plus className="h-4 w-4" strokeWidth={2.4} />
+            Оформить приход
+          </Button>
+        )}
       </div>
 
       {tab === "balances" ? (
@@ -603,10 +604,12 @@ export default function StockPage() {
                 {sortedBalances.length}
               </span>
               <div className="flex-1" />
-              <Button onClick={openAdjust}>
-                <Plus className="h-4 w-4" strokeWidth={2.4} />
-                Оформить приход
-              </Button>
+              {canAdjust && (
+                <Button onClick={openAdjust}>
+                  <Plus className="h-4 w-4" strokeWidth={2.4} />
+                  Оформить приход
+                </Button>
+              )}
             </div>
 
             {balances.isLoading ? (
@@ -691,14 +694,16 @@ export default function StockPage() {
                               {st.label}
                             </span>
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => openAdjustFor(row)}
-                            title="Приход / расход"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/70 hover:text-text"
-                          >
-                            <ChevronRight className="h-4 w-4" strokeWidth={2} />
-                          </button>
+                          {canAdjust && (
+                            <button
+                              type="button"
+                              onClick={() => openAdjustFor(row)}
+                              title="Приход / расход"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/70 hover:text-text"
+                            >
+                              <ChevronRight className="h-4 w-4" strokeWidth={2} />
+                            </button>
+                          )}
                         </div>
                       );
                     })
@@ -959,16 +964,18 @@ export default function StockPage() {
         actions={
           selectedBalance && (
             <>
-              <Button
-                className="flex-1 justify-center"
-                onClick={() => {
-                  const r = selectedBalance;
-                  setSelectedBalance(null);
-                  openAdjustFor(r);
-                }}
-              >
-                <Plus className="h-4 w-4" strokeWidth={2.2} /> Приход / расход
-              </Button>
+              {canAdjust && (
+                <Button
+                  className="flex-1 justify-center"
+                  onClick={() => {
+                    const r = selectedBalance;
+                    setSelectedBalance(null);
+                    openAdjustFor(r);
+                  }}
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2.2} /> Приход / расход
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -1014,7 +1021,7 @@ export default function StockPage() {
         }
         actions={
           selectedMovement &&
-          isSuperAdmin && (
+          canDeleteMovement && (
             <Button
               variant="danger"
               className="flex-1 justify-center"

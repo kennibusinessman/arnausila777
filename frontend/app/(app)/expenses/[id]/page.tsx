@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { ExpenseForm, type ExpenseFormValues } from "@/components/expenses/ExpenseForm";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useDeleteExpense, useExpense, useUpdateExpense } from "@/lib/hooks/useExpenses";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import { categoryColor } from "@/lib/utils/expenseCategoryColors";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 
@@ -18,7 +18,7 @@ export default function ExpenseDetailPage() {
   const params = useParams<{ id: string }>();
   const expenseId = params.id;
   const router = useRouter();
-  const isSuperAdmin = useAuthStore((s) => s.user?.role) === UserRole.SUPER_ADMIN;
+  const canDelete = useCan(Permission.EXPENSES_DELETE);
 
   const { data: expense, isLoading, isError, error } = useExpense(expenseId);
   const updateExpense = useUpdateExpense(expenseId);
@@ -136,7 +136,7 @@ export default function ExpenseDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
               Редактировать
             </Button>
-            {isSuperAdmin && (
+            {canDelete && (
               <Button
                 variant="secondary"
                 size="sm"

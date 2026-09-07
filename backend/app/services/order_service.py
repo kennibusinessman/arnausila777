@@ -18,6 +18,7 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.access import Permission
 from app.core.enums import ExpenseCategoryType, SourceType, UserRole, WarehouseType
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.models import (
@@ -48,8 +49,9 @@ def _is_sales(actor: User) -> bool:
     return actor.role is UserRole.SALES_MANAGER
 
 
-def _is_warehouse(actor: User) -> bool:
-    return actor.role is UserRole.WAREHOUSE_MANAGER
+def _cannot_price(actor: User) -> bool:
+    """Без права проставлять цены заказ заводится «без цен» — доценит менеджер."""
+    return not actor.has_permission(Permission.ORDERS_SET_PRICES)
 
 
 def _scope(actor: User) -> list[ColumnElement[bool]]:
@@ -429,17 +431,17 @@ async def create_order(session: AsyncSession, actor: User, data: OrderCreate) ->
 
     if _is_sales(actor):
         manager_id = actor.id
-    elif _is_warehouse(actor):
+    elif _cannot_price(actor):
         manager_id = None  # заказ без цен — менеджера назначит тот, кто доценит
     else:
         manager_id = data.manager_id or actor.id
 
     items, total, products_by_id = await _build_items(
-        session, data.items, unpriced=_is_warehouse(actor)
+        session, data.items, unpriced=_cannot_price(actor)
     )
     # Заказ с ценами — у всех товаров должен быть вес. Заказ зав. склада без цен
     # эту проверку не проходит (вес доуточнят при доценке менеджером).
-    if not _is_warehouse(actor):
+    if not _cannot_price(actor):
         _require_product_weights(list(products_by_id.values()))
     order = Order(
         order_number=await _generate_order_number(session),

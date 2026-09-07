@@ -21,7 +21,7 @@ import { DetailModal } from "@/components/ui/DetailModal";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useClientOptions } from "@/lib/hooks/useClients";
 import { useOrderOptionsByClient } from "@/lib/hooks/useOrders";
 import {
@@ -32,7 +32,7 @@ import {
   useUpdatePayment,
 } from "@/lib/hooks/usePayments";
 import { apiErrorMessage } from "@/lib/api/http";
-import { PaymentMethod, UserRole } from "@/lib/types/enums";
+import { PaymentMethod, Permission } from "@/lib/types/enums";
 import type { PaymentRead } from "@/lib/types/payment";
 import { formatCurrency, formatDayMonth } from "@/lib/utils/format";
 import { avatarGradient, initialsOf, paymentMethodMeta } from "@/lib/utils/paymentMethodMeta";
@@ -66,8 +66,7 @@ function emptyForm(): FormState {
 }
 
 export default function PaymentsPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+  const canEdit = useCan(Permission.PAYMENTS_EDIT);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [dateFrom, setDateFrom] = useState("");
@@ -187,7 +186,7 @@ export default function PaymentsPage() {
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const to = Math.min(page * PAGE_SIZE, total);
 
-  const gridCols = isAdmin
+  const gridCols = canEdit
     ? "minmax(0,1.5fr) 132px 152px minmax(0,1.2fr) 150px 96px"
     : "minmax(0,1.5fr) 132px 152px minmax(0,1.2fr) 150px";
 
@@ -393,7 +392,7 @@ export default function PaymentsPage() {
           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Способ</span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Назначение</span>
           <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Сумма</span>
-          {isAdmin && <span />}
+          {canEdit && <span />}
         </div>
 
         {/* rows */}
@@ -448,7 +447,7 @@ export default function PaymentsPage() {
                   <span className="text-right text-[14px] font-bold tabular-nums text-success">
                     +{formatCurrency(p.amount)}
                   </span>
-                  {isAdmin && (
+                  {canEdit && (
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => openEdit(p)}
@@ -659,7 +658,7 @@ export default function PaymentsPage() {
         }
         actions={
           selected &&
-          isAdmin && (
+          canEdit && (
             <>
               <Button
                 className="flex-1 justify-center"

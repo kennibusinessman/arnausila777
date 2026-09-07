@@ -7,9 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import UserRole
+from app.core.access import Permission
 from app.core.exceptions import NotFoundError
-from app.core.permissions import require_roles
+from app.core.permissions import require_permissions
 from app.models import User, Warehouse
 from app.repositories.base import CRUDRepository
 from app.schemas.common import Page
@@ -18,11 +18,8 @@ from app.schemas.warehouse import WarehouseCreate, WarehouseRead, WarehouseUpdat
 router = APIRouter(prefix="/warehouses", tags=["warehouses"])
 repo = CRUDRepository(Warehouse)
 
-Reader = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
-]
-Writer = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
+Reader = Annotated[User, Depends(require_permissions(Permission.WAREHOUSES_VIEW))]
+Writer = Annotated[User, Depends(require_permissions(Permission.WAREHOUSES_MANAGE))]
 
 
 @router.get("", response_model=Page[WarehouseRead])

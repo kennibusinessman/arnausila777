@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/auth/store";
-import { roleHomeRoute } from "@/lib/utils/roleHomeRoute";
+import { homeRoute } from "@/lib/utils/homeRoute";
 
 export default function RootPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function RootPage() {
 
   useEffect(() => {
     if (status === "authenticated" && user) {
-      router.replace(roleHomeRoute(user.role));
+      router.replace(homeRoute(user));
     } else if (status === "unauthenticated") {
       router.replace("/login");
     }

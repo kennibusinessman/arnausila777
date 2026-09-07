@@ -1,7 +1,8 @@
 """Отчёты: /api/reports.
 
-debts — SA,B,SaM (SaM только свои клиенты); dashboard/pnl/expenses-by-category/
-revenue-expense-trend — SA,B; production/period-summary — SA,B; stock — SA,B,WM.
+Права: reports.debts (дебиторка, менеджер видит только своих клиентов),
+dashboard.view (дашборд), reports.finance (pnl, расходы по категориям, тренд,
+продажи, «за период»), reports.production, reports.stock (остатки и движение).
 Параметры периода: date_from, date_to; revenue_mode=shipments|payments.
 """
 from __future__ import annotations
@@ -14,8 +15,9 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession
 from app.core.config import settings
-from app.core.enums import ItemType, RevenueMode, UserRole
-from app.core.permissions import require_roles
+from app.core.access import Permission
+from app.core.enums import ItemType, RevenueMode
+from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.report import (
     DashboardResponse,
@@ -35,15 +37,11 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 _DEFAULT_REVENUE_MODE = RevenueMode(settings.REVENUE_MODE_DEFAULT)
 
-Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
-Manager = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
-]
-StockViewer = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
-]
+DashboardViewer = Annotated[User, Depends(require_permissions(Permission.DASHBOARD_VIEW))]
+FinanceViewer = Annotated[User, Depends(require_permissions(Permission.REPORTS_FINANCE))]
+ProductionViewer = Annotated[User, Depends(require_permissions(Permission.REPORTS_PRODUCTION))]
+StockViewer = Annotated[User, Depends(require_permissions(Permission.REPORTS_STOCK))]
+DebtsViewer = Annotated[User, Depends(require_permissions(Permission.REPORTS_DEBTS))]
 
 DateFrom = Annotated[date | None, Query()]
 DateTo = Annotated[date | None, Query()]
@@ -52,7 +50,7 @@ Mode = Annotated[RevenueMode, Query(alias="revenue_mode")]
 
 @router.get("/debts", response_model=DebtsResponse)
 async def get_debts(
-    actor: Manager,
+    actor: DebtsViewer,
     db: DbSession,
     only_debtors: Annotated[bool, Query()] = True,
 ) -> DebtsResponse:
@@ -61,7 +59,7 @@ async def get_debts(
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
-    actor: Admin,
+    actor: DashboardViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -74,7 +72,7 @@ async def get_dashboard(
 
 @router.get("/pnl", response_model=PnLResponse)
 async def get_pnl(
-    actor: Admin,
+    actor: FinanceViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -87,7 +85,7 @@ async def get_pnl(
 
 @router.get("/expenses-by-category", response_model=list[ExpenseByCategoryRow])
 async def get_expenses_by_category(
-    actor: Admin,
+    actor: FinanceViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -97,7 +95,7 @@ async def get_expenses_by_category(
 
 @router.get("/revenue-expense-trend", response_model=list[RevenueExpenseTrendPoint])
 async def get_revenue_expense_trend(
-    actor: Admin,
+    actor: FinanceViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -110,7 +108,7 @@ async def get_revenue_expense_trend(
 
 @router.get("/production", response_model=list[ProductionRow])
 async def get_production(
-    actor: Admin,
+    actor: ProductionViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -120,7 +118,7 @@ async def get_production(
 
 @router.get("/sales-by-product", response_model=list[SalesByProductRow])
 async def get_sales_by_product(
-    actor: Admin,
+    actor: FinanceViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,
@@ -130,7 +128,7 @@ async def get_sales_by_product(
 
 @router.get("/period-summary", response_model=PeriodSummaryResponse)
 async def get_period_summary(
-    actor: Admin,
+    actor: FinanceViewer,
     db: DbSession,
     date_from: DateFrom = None,
     date_to: DateTo = None,

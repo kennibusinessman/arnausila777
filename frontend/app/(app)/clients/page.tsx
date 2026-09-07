@@ -25,6 +25,7 @@ import { DetailModal, modalPrimaryBtn } from "@/components/ui/DetailModal";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
+import { useCan } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import {
   useClientsOverview,
@@ -36,7 +37,7 @@ import { useManagerOptions } from "@/lib/hooks/useManagerOptions";
 import { usePaymentsList } from "@/lib/hooks/usePayments";
 import { useShipmentsList } from "@/lib/hooks/useShipments";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission, UserRole } from "@/lib/types/enums";
 import type { ClientOverviewRow, ClientRead, ClientStatus } from "@/lib/types/client";
 import { formatCompactCurrency, formatCurrency, formatDate, formatDayMonth } from "@/lib/utils/format";
 import { avatarGradient, initialsOf } from "@/lib/utils/paymentMethodMeta";
@@ -80,7 +81,11 @@ const emptyForm: FormState = {
 
 export default function ClientsPage() {
   const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
+  const canDelete = useCan(Permission.CLIENTS_DELETE);
+  // Владельца клиента назначает не менеджер по продажам: свой manager_id backend
+  // подставляет сам и правку поля игнорирует (routes/clients.py).
+  const canAssignManager =
+    useCan(Permission.CLIENTS_EDIT) && role !== UserRole.SALES_MANAGER;
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ClientStatus | "all">("all");
@@ -97,7 +102,7 @@ export default function ClientsPage() {
   const [selected, setSelected] = useState<ClientOverviewRow | null>(null);
 
   const { data: rows, isLoading } = useClientsOverview();
-  const managers = useManagerOptions(isAdmin);
+  const managers = useManagerOptions(canAssignManager);
   const managerOptions = (managers.data ?? []).map((m) => ({ value: m.id, label: m.full_name }));
 
   const createClient = useCreateClient();
@@ -395,7 +400,7 @@ export default function ClientsPage() {
                     >
                       <Pencil className="h-[15px] w-[15px]" strokeWidth={1.9} />
                     </button>
-                    {isAdmin && (
+                    {canDelete && (
                       <button
                         onClick={() => handleDelete(c)}
                         title="Удалить"
@@ -488,7 +493,7 @@ export default function ClientsPage() {
           <Field label="Адрес">
             <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Город, улица" className={inputCls} />
           </Field>
-          {isAdmin && (
+          {canAssignManager && (
             <Field className="col-span-2" label="Менеджер (необязательно)">
               <Combobox
                 value={form.manager_id}

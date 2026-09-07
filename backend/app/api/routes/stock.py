@@ -1,4 +1,5 @@
-"""Склад: /api/stock — остатки, движения, ручные корректировки (SA, B, WM)."""
+"""Склад: /api/stock — остатки и движения (stock.view), ручные корректировки
+(stock.adjust), удаление движения (stock.delete_movement)."""
 from __future__ import annotations
 
 import uuid
@@ -10,9 +11,10 @@ from sqlalchemy import case, or_, select
 from sqlalchemy.orm import joinedload
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import ItemType, MovementType, SourceType, UserRole
+from app.core.access import Permission
+from app.core.enums import ItemType, MovementType, SourceType
 from app.core.exceptions import BadRequestError
-from app.core.permissions import require_roles
+from app.core.permissions import require_permissions
 from app.models import (
     Material,
     Order,
@@ -38,13 +40,9 @@ router = APIRouter(prefix="/stock", tags=["stock"])
 balances_repo = CRUDRepository(StockBalance)
 movements_repo = CRUDRepository(StockMovement)
 
-# Склад: SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER.
-StockUser = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
-]
-# Удаление движения — расширенное право, только супер-админ.
-SuperAdminUser = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN))]
+StockUser = Annotated[User, Depends(require_permissions(Permission.STOCK_VIEW))]
+Adjuster = Annotated[User, Depends(require_permissions(Permission.STOCK_ADJUST))]
+Remover = Annotated[User, Depends(require_permissions(Permission.STOCK_DELETE_MOVEMENT))]
 
 
 @router.get("/balances", response_model=Page[StockBalanceRead])
@@ -207,7 +205,7 @@ async def item_history(
 
 @router.post("/adjustments", response_model=StockMovementRead, status_code=201)
 async def create_adjustment(
-    data: AdjustmentCreate, actor: StockUser, db: DbSession
+    data: AdjustmentCreate, actor: Adjuster, db: DbSession
 ) -> StockMovementRead:
     movement_type = (
         MovementType.ADJUSTMENT_IN
@@ -246,6 +244,6 @@ async def create_adjustment(
 
 
 @router.delete("/movements/{movement_id}", response_model=Message)
-async def delete_movement(movement_id: uuid.UUID, actor: SuperAdminUser, db: DbSession) -> Message:
+async def delete_movement(movement_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     await stock_service.delete_movement(db, actor.id, movement_id)
     return Message(detail="Движение удалено, остаток скорректирован")

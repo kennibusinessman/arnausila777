@@ -9,7 +9,7 @@ import { login as loginRequest, me as fetchMe } from "@/lib/api/auth";
 import { apiErrorMessage } from "@/lib/api/http";
 import { useAuthStore } from "@/lib/auth/store";
 import { setStoredRefreshToken } from "@/lib/auth/tokenStorage";
-import { roleHomeRoute } from "@/lib/utils/roleHomeRoute";
+import { homeRoute } from "@/lib/utils/homeRoute";
 import { Button } from "@/components/ui/Button";
 
 const loginSchema = z.object({
@@ -34,7 +34,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === "authenticated" && user) {
-      router.replace(roleHomeRoute(user.role));
+      router.replace(homeRoute(user));
     }
   }, [status, user, router]);
 
@@ -46,7 +46,7 @@ export default function LoginPage() {
       useAuthStore.getState().setAccessToken(tokens.access_token);
       const { data: currentUser } = await fetchMe();
       setSession(currentUser, tokens.access_token);
-      router.replace(roleHomeRoute(currentUser.role));
+      router.replace(homeRoute(currentUser));
     } catch (error) {
       setFormError(apiErrorMessage(error, "Не удалось войти. Попробуйте снова."));
     }

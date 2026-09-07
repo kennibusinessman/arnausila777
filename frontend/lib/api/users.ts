@@ -1,6 +1,13 @@
 import { http } from "@/lib/api/http";
 import type { Message, Page, PageParams } from "@/lib/types/common";
-import type { UserCreate, UserRead, UserRoleUpdate, UserUpdate } from "@/lib/types/user";
+import type {
+  PermissionCatalog,
+  UserCreate,
+  UserPermissionsUpdate,
+  UserRead,
+  UserRoleUpdate,
+  UserUpdate,
+} from "@/lib/types/user";
 
 export interface ListUsersParams extends Partial<PageParams> {
   search?: string;
@@ -20,3 +27,10 @@ export const updateUserRole = (userId: string, data: UserRoleUpdate) =>
   http.patch<UserRead>(`/users/${userId}/role`, data);
 
 export const deleteUser = (userId: string) => http.delete<Message>(`/users/${userId}`);
+
+export const updateUserPermissions = (userId: string, data: UserPermissionsUpdate) =>
+  http.patch<UserRead>(`/users/${userId}/permissions`, data);
+
+/** Справочник прав с подписями и наборами ролей по умолчанию. */
+export const getPermissionCatalog = () =>
+  http.get<PermissionCatalog>("/users/permissions/catalog");

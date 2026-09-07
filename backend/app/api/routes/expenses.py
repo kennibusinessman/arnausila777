@@ -1,7 +1,7 @@
 """Расходы: /api/expenses.
 
-GET/POST/PATCH/{id} — SA,B; DELETE — только SA. Расход — запись по факту,
-без согласования.
+Права: expenses.view (чтение), expenses.manage (заводить/править),
+expenses.delete (удалять). Расход — запись по факту, без согласования.
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import UserRole
-from app.core.permissions import require_roles
+from app.core.access import Permission
+from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.common import Message, Page
 from app.schemas.expense import ExpenseCreate, ExpenseListItem, ExpenseRead, ExpenseSummary, ExpenseUpdate
@@ -21,13 +21,14 @@ from app.services import expense_service
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
-Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
-SuperAdmin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN))]
+Reader = Annotated[User, Depends(require_permissions(Permission.EXPENSES_VIEW))]
+Writer = Annotated[User, Depends(require_permissions(Permission.EXPENSES_MANAGE))]
+Remover = Annotated[User, Depends(require_permissions(Permission.EXPENSES_DELETE))]
 
 
 @router.get("", response_model=Page[ExpenseListItem])
 async def list_expenses(
-    actor: Admin,
+    actor: Reader,
     db: DbSession,
     params: Pagination,
     category_id: Annotated[uuid.UUID | None, Query()] = None,
@@ -49,7 +50,7 @@ async def list_expenses(
 
 @router.get("/summary", response_model=ExpenseSummary)
 async def get_expenses_summary(
-    actor: Admin,
+    actor: Reader,
     db: DbSession,
     category_id: Annotated[uuid.UUID | None, Query()] = None,
     date_from: Annotated[date | None, Query()] = None,
@@ -62,26 +63,26 @@ async def get_expenses_summary(
 
 
 @router.post("", response_model=ExpenseRead, status_code=201)
-async def create_expense(data: ExpenseCreate, actor: Admin, db: DbSession) -> ExpenseRead:
+async def create_expense(data: ExpenseCreate, actor: Writer, db: DbSession) -> ExpenseRead:
     expense = await expense_service.create_expense(db, actor.id, data)
     return ExpenseRead.model_validate(expense)
 
 
 @router.get("/{expense_id}", response_model=ExpenseRead)
-async def get_expense(expense_id: uuid.UUID, actor: Admin, db: DbSession) -> ExpenseRead:
+async def get_expense(expense_id: uuid.UUID, actor: Reader, db: DbSession) -> ExpenseRead:
     expense = await expense_service.get_full(db, expense_id)
     return ExpenseRead.model_validate(expense)
 
 
 @router.patch("/{expense_id}", response_model=ExpenseRead)
 async def update_expense(
-    expense_id: uuid.UUID, data: ExpenseUpdate, actor: Admin, db: DbSession
+    expense_id: uuid.UUID, data: ExpenseUpdate, actor: Writer, db: DbSession
 ) -> ExpenseRead:
     expense = await expense_service.update_expense(db, actor.id, expense_id, data)
     return ExpenseRead.model_validate(expense)
 
 
 @router.delete("/{expense_id}", response_model=Message)
-async def delete_expense(expense_id: uuid.UUID, actor: SuperAdmin, db: DbSession) -> Message:
+async def delete_expense(expense_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     await expense_service.delete_expense(db, actor.id, expense_id)
     return Message(detail="Расход удалён")

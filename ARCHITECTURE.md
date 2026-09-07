@@ -28,6 +28,9 @@ SHIFT_MASTER       shift_master      только свои сменные отч
 SALES_MANAGER      sales_manager     клиенты, заказы, отгрузки, оплаты, долги
 ```
 
+Роль — это только **набор прав по умолчанию**: супер-админ может выдать или снять
+конкретное право отдельному пользователю (см. 2.5 и `users.permissions`).
+
 Резерв на будущее (не реализуем в MVP): `ACCOUNTANT`, `PURCHASER`, `WORKER`,
 `PRODUCTION_MANAGER`.
 
@@ -45,7 +48,8 @@ backend/
       config.py              # Settings (pydantic-settings): DB URL, JWT secret, TTL, CORS
       database.py            # async engine, async_session_maker, get_db() dependency, Base
       security.py            # hash/verify password, create/decode JWT (access+refresh)
-      permissions.py         # UserRole enum, require_roles(), role↔module матрица
+      access.py              # каталог Permission, матрица ROLE_PERMISSIONS, resolve_permissions()
+      permissions.py         # require_permissions() / require_roles()
       enums.py               # все строковые enum (статусы, типы движений и т.д.)
       exceptions.py          # доменные исключения (InsufficientStock, Forbidden, NotFound...)
     models/
@@ -138,15 +142,50 @@ class ExpenseCategoryType(str, Enum):RAW_MATERIAL_PURCHASE; OPERATING; PAYROLL; 
 class ExpenseStatus(str, Enum):      DRAFT; SUBMITTED; APPROVED; REJECTED; CANCELLED
 ```
 
-### 2.5 permissions.py
+### 2.5 access.py + permissions.py
+
+Доступ двухслойный: **роль** задаёт набор прав по умолчанию, **индивидуальные права**
+пользователя его корректируют.
+
+`core/access.py` — каталог прав (`Permission`), матрица `ROLE_PERMISSIONS` и чистая
+функция `resolve_permissions(role, overrides)`. Модели и FastAPI сюда не импортируются,
+поэтому каталогом пользуется и ORM (`User.effective_permissions`), и слой API.
+
 ```python
-def require_roles(*allowed: UserRole):
+class Permission(str, Enum):
+    STOCK_VIEW = "stock.view"
+    ORDERS_CREATE = "orders.create"
+    ...
+
+ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {...}
+```
+
+`users.permissions` (JSONB) хранит только **отклонения** от набора роли:
+`{"stock.view": true, "expenses.view": false}` — `true` выдаёт право сверх роли,
+`false` забирает выданное ролью. Пустой словарь = «как у роли». У `SUPER_ADMIN`
+всегда все права, и они не редактируются (иначе можно запереть систему).
+
+`core/permissions.py` — зависимости FastAPI:
+
+```python
+def require_permissions(*allowed: Permission):
     async def checker(user: User = Depends(get_current_active_user)) -> User:
-        if user.role not in allowed:
-            raise HTTPException(403, "Недостаточно прав")
+        if not user.effective_permissions & set(allowed):   # достаточно любого
+            raise ForbiddenError("Недостаточно прав для этого действия")
         return user
     return checker
 ```
+
+`require_roles(*allowed)` остаётся для проверок, завязанных именно на роль
+(например `GET /shift-reports/my` — выборка «своих» отчётов мастера смены).
+
+Права читаются из БД на каждый запрос вместе с пользователем, поэтому снятое право
+действует сразу, без перевыпуска токена.
+
+Раздаёт права супер-админ на странице «Пользователи»:
+`PATCH /api/users/{id}/permissions` (право `users.permissions`), справочник прав с
+подписями и наборами ролей — `GET /api/users/permissions/catalog`.
+
 Дополнительно: `manager_scope` — для `SALES_MANAGER` ограничение «только свои клиенты»
 (фильтр `manager_id == user.id` внутри сервиса).
 
@@ -382,8 +421,8 @@ Materials скрыты от SaM/SM.
 ### Audit logs — `/api/audit-logs` — SA, B.
 
 > Каждый защищённый endpoint объявляет
-> `current_user: User = Depends(require_roles(...))`. Безопасность — на backend; скрытие
-> меню на frontend — только UX.
+> `actor: User = Depends(require_permissions(...))` (см. 2.5). Безопасность — на backend;
+> скрытие меню и кнопок на frontend — только UX.
 
 ---
 
@@ -482,7 +521,7 @@ frontend/
   lib/
     api.ts            # fetch-обёртка: baseURL, Bearer, авто-refresh по 401
     auth.ts           # хранение токена, getMe, logout, redirect по роли
-    permissions.ts    # ROLE_MENU, canAccess(role, route), HOME_BY_ROLE
+    permissions.ts    # hasPermission()/useCan(), навигация и кнопки по правам
     utils.ts          # формат денег/дат, cn()
     validations/      # Zod-схемы (зеркало backend schemas)
   stores/             # Zustand: authStore (user, token), uiStore

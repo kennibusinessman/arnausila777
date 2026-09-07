@@ -3,13 +3,13 @@
 import { clsx } from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navItems } from "@/components/layout/navConfig";
+import { visibleNavItems } from "@/components/layout/navConfig";
 import { useAuthStore } from "@/lib/auth/store";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const role = useAuthStore((s) => s.user?.role);
-  const items = navItems.filter((item) => role && item.roles.includes(role));
+  const user = useAuthStore((s) => s.user);
+  const items = visibleNavItems(user);
 
   return (
     <aside className="glass sticky top-4 hidden h-[calc(100vh-2rem)] w-[230px] shrink-0 flex-col rounded-3xl px-3 py-4 lg:flex">

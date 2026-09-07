@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MoreHorizontal, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { navItems } from "@/components/layout/navConfig";
+import { visibleNavItems } from "@/components/layout/navConfig";
 import { useAuthStore } from "@/lib/auth/store";
 
 /** Нижний таб-бар для телефонов/планшетов (как в zakk/mobile.html). На десктопе (lg+) скрыт. */
@@ -21,8 +21,8 @@ const SHORT_LABEL: Record<string, string> = {
 
 export function BottomNav() {
   const pathname = usePathname();
-  const role = useAuthStore((s) => s.user?.role);
-  const items = navItems.filter((item) => role && item.roles.includes(role));
+  const user = useAuthStore((s) => s.user);
+  const items = visibleNavItems(user);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Закрываем лист «Ещё» при переходе на другую страницу.

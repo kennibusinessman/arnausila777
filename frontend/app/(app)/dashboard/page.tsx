@@ -30,16 +30,17 @@ import {
 import { Card } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Spinner } from "@/components/ui/Spinner";
+import { useCan } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import {
   useDashboard,
   useExpensesByCategory,
   useRevenueExpenseTrend,
 } from "@/lib/hooks/useDashboard";
-import { RevenueMode, UserRole } from "@/lib/types/enums";
+import { Permission, RevenueMode } from "@/lib/types/enums";
 import { apiErrorMessage } from "@/lib/api/http";
 import { formatCurrency, formatNumber } from "@/lib/utils/format";
-import { roleHomeRoute } from "@/lib/utils/roleHomeRoute";
+import { homeRoute } from "@/lib/utils/homeRoute";
 
 const DONUT_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#94a3b8", "#7c3aed", "#dc2626"];
 
@@ -51,12 +52,13 @@ export default function DashboardPage() {
   const [dateTo, setDateTo] = useState("");
   const [revenueMode, setRevenueMode] = useState<RevenueMode>(RevenueMode.SHIPMENTS);
 
-  // Дашборд доступен только SA/B (см. backend/app/api/routes/reports.py) — остальные роли уводим на их раздел.
+  // Дашборд открыт по праву «видеть дашборд» — остальных уводим на их раздел.
+  const canView = useCan(Permission.DASHBOARD_VIEW);
   useEffect(() => {
-    if (user && user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.BOSS) {
-      router.replace(roleHomeRoute(user.role));
+    if (user && !canView) {
+      router.replace(homeRoute(user));
     }
-  }, [user, router]);
+  }, [user, canView, router]);
 
   const filters = {
     date_from: dateFrom || undefined,
@@ -68,7 +70,7 @@ export default function DashboardPage() {
   const trend = useRevenueExpenseTrend(filters);
   const expensesByCategory = useExpensesByCategory(filters);
 
-  if (user && user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.BOSS) {
+  if (user && !canView) {
     return null;
   }
 

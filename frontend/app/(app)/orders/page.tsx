@@ -22,10 +22,10 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { CreateOrderModal } from "@/components/orders/CreateOrderModal";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useOrdersList, useOrdersSummary } from "@/lib/hooks/useOrders";
 import { useSettings } from "@/lib/hooks/useSettings";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import type { OrderListItem } from "@/lib/types/order";
 import { apiErrorMessage } from "@/lib/api/http";
 import { formatCurrency, formatDate, formatNumber, formatPercent, formatWeight } from "@/lib/utils/format";
@@ -249,8 +249,7 @@ function OrderDetailModal({
 
 export default function OrdersPage() {
   const router = useRouter();
-  const role = useAuthStore((s) => s.user?.role);
-  const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
+  const hideMoney = !useCan(Permission.ORDERS_VIEW_MONEY);
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");

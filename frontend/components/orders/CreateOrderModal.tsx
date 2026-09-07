@@ -6,12 +6,12 @@ import { Combobox } from "@/components/ui/Combobox";
 import { Modal } from "@/components/ui/Modal";
 import { CreateClientModal } from "@/components/orders/CreateClientModal";
 import { OrderItemsEditor } from "@/components/orders/OrderItemsEditor";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useClientOptions } from "@/lib/hooks/useClients";
 import { useCreateOrder } from "@/lib/hooks/useOrders";
 import { useProductOptions } from "@/lib/hooks/useProducts";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import type { OrderItemCreate } from "@/lib/types/order";
 
 interface CreateOrderModalProps {
@@ -38,8 +38,7 @@ export function CreateOrderModal({ open, onClose, onCreated }: CreateOrderModalP
   // Имя для поп-апа создания клиента «на ходу» (null — окно закрыто).
   const [newClientName, setNewClientName] = useState<string | null>(null);
 
-  const role = useAuthStore((s) => s.user?.role);
-  const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
+  const hideMoney = !useCan(Permission.ORDERS_VIEW_MONEY);
 
   const clients = useClientOptions();
   const products = useProductOptions();

@@ -13,16 +13,17 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { UserRole } from "@/lib/types/enums";
+import { hasPermission } from "@/lib/auth/permissions";
+import { Permission } from "@/lib/types/enums";
+import type { UserRead } from "@/lib/types/user";
 
 export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  roles: UserRole[];
+  /** Раздел виден, если есть хотя бы одно из этих прав. */
+  permissions: Permission[];
 }
-
-const { SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER, SHIFT_MASTER, SALES_MANAGER } = UserRole;
 
 /**
  * Один раздел на каждый роутер /api, кроме: /api/warehouses (склад скрыт из интерфейса,
@@ -30,38 +31,65 @@ const { SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER, SHIFT_MASTER, SALES_MANAGER } = Us
  * создаётся вместе с заказом — components/orders/CreateOrderModal.tsx) и /api/expense-categories
  * (своей страницы нет — категория создаётся «на ходу» прямо в форме расхода, см.
  * onCreate в components/expenses/ExpenseForm.tsx).
+ *
+ * Видимость раздела задаётся правом, а не ролью: супер-админ может выдать или
+ * отобрать конкретное право отдельному пользователю (страница «Пользователи»).
  */
 export const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Дашборд", icon: LayoutDashboard, roles: [SUPER_ADMIN, BOSS] },
+  {
+    href: "/dashboard",
+    label: "Дашборд",
+    icon: LayoutDashboard,
+    permissions: [Permission.DASHBOARD_VIEW],
+  },
   {
     href: "/orders",
     label: "Заказы",
     icon: ShoppingCart,
-    roles: [SUPER_ADMIN, BOSS, SALES_MANAGER, WAREHOUSE_MANAGER],
+    permissions: [Permission.ORDERS_VIEW],
   },
   {
     href: "/shift-reports",
     label: "Сменные отчёты",
     icon: ClipboardList,
-    roles: [SUPER_ADMIN, BOSS, SHIFT_MASTER, WAREHOUSE_MANAGER],
+    permissions: [Permission.SHIFT_REPORTS_VIEW, Permission.SHIFT_REPORTS_VIEW_ALL],
   },
-  { href: "/stock", label: "Остатки", icon: Package, roles: [SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER] },
-  { href: "/expenses", label: "Расходы", icon: Receipt, roles: [SUPER_ADMIN, BOSS] },
-  { href: "/payments", label: "Оплаты", icon: Wallet, roles: [SUPER_ADMIN, BOSS, SALES_MANAGER] },
-  { href: "/clients", label: "Клиенты", icon: Users, roles: [SUPER_ADMIN, BOSS, SALES_MANAGER] },
-  {
-    href: "/products",
-    label: "Товары",
-    icon: Box,
-    roles: [SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER, SALES_MANAGER],
-  },
+  { href: "/stock", label: "Остатки", icon: Package, permissions: [Permission.STOCK_VIEW] },
+  { href: "/expenses", label: "Расходы", icon: Receipt, permissions: [Permission.EXPENSES_VIEW] },
+  { href: "/payments", label: "Оплаты", icon: Wallet, permissions: [Permission.PAYMENTS_VIEW] },
+  { href: "/clients", label: "Клиенты", icon: Users, permissions: [Permission.CLIENTS_VIEW] },
+  { href: "/products", label: "Товары", icon: Box, permissions: [Permission.PRODUCTS_VIEW] },
   {
     href: "/reports",
     label: "Отчёты",
     icon: BarChart3,
-    roles: [SUPER_ADMIN, BOSS, WAREHOUSE_MANAGER, SALES_MANAGER],
+    permissions: [
+      Permission.REPORTS_FINANCE,
+      Permission.REPORTS_PRODUCTION,
+      Permission.REPORTS_STOCK,
+      Permission.REPORTS_DEBTS,
+      Permission.PAYMENTS_VIEW,
+      Permission.CLIENTS_VIEW_DETAILS,
+      Permission.SHIFT_REPORTS_VIEW_ALL,
+    ],
   },
-  { href: "/users", label: "Пользователи", icon: UserCog, roles: [SUPER_ADMIN, BOSS] },
-  { href: "/audit-logs", label: "Журнал аудита", icon: History, roles: [SUPER_ADMIN, BOSS] },
-  { href: "/settings", label: "Настройки", icon: SlidersHorizontal, roles: [SUPER_ADMIN, BOSS] },
+  { href: "/users", label: "Пользователи", icon: UserCog, permissions: [Permission.USERS_VIEW] },
+  {
+    href: "/audit-logs",
+    label: "Журнал аудита",
+    icon: History,
+    permissions: [Permission.AUDIT_VIEW],
+  },
+  {
+    href: "/settings",
+    label: "Настройки",
+    icon: SlidersHorizontal,
+    permissions: [Permission.SETTINGS_EDIT],
+  },
 ];
+
+/** Разделы, доступные пользователю, в порядке навигации. */
+export function visibleNavItems(user: UserRead | null | undefined): NavItem[] {
+  if (!user) return [];
+  return navItems.filter((item) => hasPermission(user, ...item.permissions));
+}

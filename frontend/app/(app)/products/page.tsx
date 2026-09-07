@@ -21,11 +21,11 @@ import { DetailModal } from "@/components/ui/DetailModal";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useCreateMaterial, useDeleteMaterial, useUpdateMaterial } from "@/lib/hooks/useMaterials";
 import { useCatalog, useCreateProduct, useDeleteProduct, useUpdateProduct } from "@/lib/hooks/useProducts";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import type { CatalogItem } from "@/lib/types/product";
 import { formatCompactCurrency, formatCurrency, formatNumber } from "@/lib/utils/format";
 import { PRODUCT_CATEGORIES, SPUNBOND_SUBCATEGORIES, defaultUnit } from "@/lib/utils/productCategories";
@@ -71,9 +71,16 @@ function qtyLabel(q: number): string {
 }
 
 export default function ProductsPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
-  const isSuperAdmin = role === UserRole.SUPER_ADMIN;
+  // Каталог смешанный (продукция + сырьё), поэтому право проверяется по виду позиции.
+  const canCreateProduct = useCan(Permission.PRODUCTS_CREATE);
+  const canEditProduct = useCan(Permission.PRODUCTS_EDIT);
+  const canDeleteProduct = useCan(Permission.PRODUCTS_DELETE);
+  const canManageMaterial = useCan(Permission.MATERIALS_MANAGE);
+  const canDeleteMaterial = useCan(Permission.MATERIALS_DELETE);
+  const canEditItem = (item: CatalogItem) =>
+    item.kind === "material" ? canManageMaterial : canEditProduct;
+  const canDeleteItem = (item: CatalogItem) =>
+    item.kind === "material" ? canDeleteMaterial : canDeleteProduct;
 
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("all"); // all | product | material | cat:<name>
@@ -254,7 +261,7 @@ export default function ProductsPage() {
           <button disabled title="Скоро" className="hidden items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3.5 py-2 text-[12.5px] font-medium text-muted opacity-60 sm:flex">
             <Download className="h-[15px] w-[15px]" strokeWidth={1.9} /> Экспорт
           </button>
-          {isAdmin && (
+          {canCreateProduct && (
             <Button onClick={openCreate} className="!px-4 !py-2 !text-[12.5px]">
               <Plus className="h-[15px] w-[15px]" strokeWidth={2.3} /> Добавить позицию
             </Button>
@@ -342,7 +349,7 @@ export default function ProductsPage() {
                     {sm.label}
                   </span>
                   <div className="flex items-center justify-end gap-1">
-                    {isAdmin && (
+                    {canEditItem(it) && (
                       <button
                         onClick={() => openEdit(it)}
                         title="Изменить"
@@ -351,7 +358,7 @@ export default function ProductsPage() {
                         <Pencil className="h-[15px] w-[15px]" strokeWidth={1.9} />
                       </button>
                     )}
-                    {isSuperAdmin && (
+                    {canDeleteItem(it) && (
                       <button
                         onClick={() => handleDelete(it)}
                         title="Удалить"
@@ -442,7 +449,7 @@ export default function ProductsPage() {
         actions={
           selected && (
             <>
-              {isAdmin && (
+              {canEditItem(selected) && (
                 <Button
                   className="flex-1 justify-center"
                   onClick={() => {
@@ -454,7 +461,7 @@ export default function ProductsPage() {
                   <Pencil className="h-4 w-4" strokeWidth={1.9} /> Изменить
                 </Button>
               )}
-              {isSuperAdmin && (
+              {canDeleteItem(selected) && (
                 <Button
                   variant="danger"
                   onClick={() => {

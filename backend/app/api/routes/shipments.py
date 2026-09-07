@@ -13,8 +13,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import UserRole
-from app.core.permissions import require_roles
+from app.core.access import Permission
+from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.common import Page
 from app.schemas.shipment import ShipmentListItem, ShipmentRead
@@ -22,13 +22,7 @@ from app.services import shipment_service
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
-Viewer = Annotated[
-    User,
-    Depends(require_roles(
-        UserRole.SUPER_ADMIN, UserRole.BOSS,
-        UserRole.WAREHOUSE_MANAGER, UserRole.SALES_MANAGER,
-    )),
-]
+Viewer = Annotated[User, Depends(require_permissions(Permission.SHIPMENTS_VIEW))]
 
 
 @router.get("", response_model=Page[ShipmentListItem])

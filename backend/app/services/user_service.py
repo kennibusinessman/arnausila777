@@ -11,12 +11,18 @@ from datetime import datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import normalize_overrides
 from app.core.enums import UserRole
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.core.security import hash_password
 from app.models import User
 from app.schemas.common import PageParams
-from app.schemas.user import UserCreate, UserRoleUpdate, UserUpdate
+from app.schemas.user import (
+    UserCreate,
+    UserPermissionsUpdate,
+    UserRoleUpdate,
+    UserUpdate,
+)
 from app.services import audit_service
 
 
@@ -144,6 +150,35 @@ async def update_role(
         entity_id=user.id,
         old={"role": old_role.value},
         new={"role": data.role.value},
+    )
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def update_permissions(
+    session: AsyncSession, actor: User, user_id: uuid.UUID, data: UserPermissionsUpdate
+) -> User:
+    """Заменяет индивидуальные права пользователя (отклонения от прав роли)."""
+    user = await _get_or_404(session, user_id)
+    if user.role is UserRole.SUPER_ADMIN:
+        # У супер-админа всегда все права — иначе его можно было бы запереть,
+        # сняв право менять права.
+        raise ForbiddenError("Права SUPER_ADMIN изменить нельзя")
+    _ensure_can_touch_role(actor, user.role)
+
+    old = dict(user.permissions or {})
+    new = normalize_overrides({perm.value: value for perm, value in data.permissions.items()})
+    user.permissions = new
+
+    await audit_service.log(
+        session,
+        user_id=actor.id,
+        action="UPDATE_USER_PERMISSIONS",
+        entity_type="User",
+        entity_id=user.id,
+        old={"permissions": old},
+        new={"permissions": new},
     )
     await session.commit()
     await session.refresh(user)

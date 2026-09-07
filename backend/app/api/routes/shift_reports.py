@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
 from app.core.enums import ShiftReportStatus, ShiftType, UserRole
-from app.core.permissions import require_roles
+from app.core.access import Permission
+from app.core.permissions import require_permissions, require_roles
 from app.models import User
 from app.schemas.common import Message, Page
 from app.schemas.shift_report import (
@@ -29,45 +30,22 @@ from app.services import shift_report_service
 
 router = APIRouter(prefix="/shift-reports", tags=["shift-reports"])
 
-# Авторы отчётов: создают/правят/отправляют. Зав. складом тоже заводит сменные
-# отчёты (создатель становится «старшим смены», как и SA/B при создании из формы).
-Master = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.SHIFT_MASTER,
-            UserRole.WAREHOUSE_MANAGER,
-        )
-    ),
-]
-Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
+# Авторы отчётов: создают/правят/отправляют (создатель становится «старшим смены»).
+Master = Annotated[User, Depends(require_permissions(Permission.SHIFT_REPORTS_CREATE))]
+Remover = Annotated[User, Depends(require_permissions(Permission.SHIFT_REPORTS_DELETE))]
+# Контроль производства: список всех отчётов и утверждение/отклонение
+# (утверждение приходует продукцию на склад).
+ListViewer = Annotated[User, Depends(require_permissions(Permission.SHIFT_REPORTS_VIEW_ALL))]
+Approver = Annotated[User, Depends(require_permissions(Permission.SHIFT_REPORTS_APPROVE))]
+Viewer = Annotated[User, Depends(require_permissions(Permission.SHIFT_REPORTS_VIEW))]
+# /my остаётся привязан к роли, а не к праву: выборку «своих» отчётов делает
+# shift_report_service по роли мастера смены, для остальных она вернула бы всё.
 ShiftMaster = Annotated[User, Depends(require_roles(UserRole.SHIFT_MASTER))]
-# Контроль производства: видеть список и утверждать/отклонять отчёты может ещё и
-# зав. складом — утверждение приходует продукцию на склад, это его зона.
-# (Создавать/править/удалять отчёты он не может — это остаётся за мастером/SA/B.)
-Overseer = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.WAREHOUSE_MANAGER)),
-]
-# Просмотр карточки отчёта: SA/B, мастер смены (свои) и зав. складом.
-Viewer = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.SHIFT_MASTER,
-            UserRole.WAREHOUSE_MANAGER,
-        )
-    ),
-]
 
 
 @router.get("", response_model=Page[ShiftReportListItem])
 async def list_reports(
-    actor: Overseer,
+    actor: ListViewer,
     db: DbSession,
     params: Pagination,
     status: Annotated[ShiftReportStatus | None, Query()] = None,
@@ -137,7 +115,7 @@ async def submit_report(
 
 @router.post("/{report_id}/approve", response_model=ShiftReportRead)
 async def approve_report(
-    report_id: uuid.UUID, data: ApproveRequest, actor: Overseer, db: DbSession
+    report_id: uuid.UUID, data: ApproveRequest, actor: Approver, db: DbSession
 ) -> ShiftReportRead:
     report = await shift_report_service.approve(db, actor, report_id, data)
     return ShiftReportRead.model_validate(report)
@@ -145,13 +123,13 @@ async def approve_report(
 
 @router.post("/{report_id}/reject", response_model=ShiftReportRead)
 async def reject_report(
-    report_id: uuid.UUID, data: RejectRequest, actor: Overseer, db: DbSession
+    report_id: uuid.UUID, data: RejectRequest, actor: Approver, db: DbSession
 ) -> ShiftReportRead:
     report = await shift_report_service.reject(db, actor, report_id, data.comment)
     return ShiftReportRead.model_validate(report)
 
 
 @router.delete("/{report_id}", response_model=Message)
-async def delete_report(report_id: uuid.UUID, actor: Admin, db: DbSession) -> Message:
+async def delete_report(report_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     await shift_report_service.delete_report(db, actor, report_id)
     return Message(detail="Сменный отчёт удалён")

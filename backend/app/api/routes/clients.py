@@ -1,8 +1,9 @@
 """Справочник клиентов: /api/clients.
 
-SALES_MANAGER работает только со своими клиентами (manager_scope): видит, создаёт
-(менеджером автоматически становится он сам), редактирует только их и не может
-переназначать менеджера. SA/B имеют полный доступ.
+Права: clients.view (список), clients.create, clients.view_details (карточка,
+статистика, дебиторка), clients.edit, clients.delete. SALES_MANAGER вдобавок
+ограничен своими клиентами (manager_scope): менеджером новых клиентов становится
+он сам, чужие карточки не открываются, переназначить менеджера нельзя.
 """
 from __future__ import annotations
 
@@ -12,9 +13,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession, Pagination
+from app.core.access import Permission
 from app.core.enums import UserRole
 from app.core.exceptions import NotFoundError
-from app.core.permissions import require_roles
+from app.core.permissions import require_permissions
 from app.models import Client, User
 from app.repositories.base import CRUDRepository
 from app.schemas.client import (
@@ -30,27 +32,14 @@ from app.services import report_service
 router = APIRouter(prefix="/clients", tags=["clients"])
 repo = CRUDRepository(Client, soft_delete=True)
 
-Manager = Annotated[
-    User,
-    Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS, UserRole.SALES_MANAGER)),
-]
-# Зав. складом тоже читает справочник клиентов — нужен для выбора клиента при
-# «забивании» заказа. Смотреть статистику (там долги) и править справочник — нельзя.
-Reader = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.SALES_MANAGER,
-            UserRole.WAREHOUSE_MANAGER,
-        )
-    ),
-]
-# Завести нового клиента «на ходу» из формы заказа может и зав. складом — он
-# «забивает» заказы. Правка справочника и статистика остаются недоступны.
-Creator = Reader
-Admin = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
+# Список клиентов читает и зав. складом — он выбирает клиента, «забивая» заказ,
+# и может завести нового «на ходу». Карточка со статистикой (там долги) и правка
+# справочника — отдельные права.
+Reader = Annotated[User, Depends(require_permissions(Permission.CLIENTS_VIEW))]
+Creator = Annotated[User, Depends(require_permissions(Permission.CLIENTS_CREATE))]
+Detailed = Annotated[User, Depends(require_permissions(Permission.CLIENTS_VIEW_DETAILS))]
+Editor = Annotated[User, Depends(require_permissions(Permission.CLIENTS_EDIT))]
+Remover = Annotated[User, Depends(require_permissions(Permission.CLIENTS_DELETE))]
 
 
 def _is_sales(actor: User) -> bool:
@@ -97,7 +86,7 @@ async def list_clients(
 
 @router.get("/overview", response_model=ClientOverviewResponse)
 async def clients_overview(
-    actor: Manager,
+    actor: Detailed,
     db: DbSession,
     search: Annotated[str | None, Query()] = None,
 ) -> ClientOverviewResponse:
@@ -117,20 +106,20 @@ async def create_client(data: ClientCreate, actor: Creator, db: DbSession) -> Cl
 
 
 @router.get("/{client_id}", response_model=ClientRead)
-async def get_client(client_id: uuid.UUID, actor: Manager, db: DbSession) -> ClientRead:
+async def get_client(client_id: uuid.UUID, actor: Detailed, db: DbSession) -> ClientRead:
     obj = await _get_in_scope(db, actor, client_id)
     return ClientRead.model_validate(obj)
 
 
 @router.get("/{client_id}/stats", response_model=ClientStats)
-async def get_client_stats(client_id: uuid.UUID, actor: Manager, db: DbSession) -> ClientStats:
+async def get_client_stats(client_id: uuid.UUID, actor: Detailed, db: DbSession) -> ClientStats:
     obj = await _get_in_scope(db, actor, client_id)
     return await report_service.client_stats(db, obj)
 
 
 @router.patch("/{client_id}", response_model=ClientRead)
 async def update_client(
-    client_id: uuid.UUID, data: ClientUpdate, actor: Manager, db: DbSession
+    client_id: uuid.UUID, data: ClientUpdate, actor: Editor, db: DbSession
 ) -> ClientRead:
     obj = await _get_in_scope(db, actor, client_id)
     payload = data.model_dump(exclude_unset=True)
@@ -143,7 +132,7 @@ async def update_client(
 
 
 @router.delete("/{client_id}", response_model=Message)
-async def delete_client(client_id: uuid.UUID, actor: Admin, db: DbSession) -> Message:
+async def delete_client(client_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     obj = await repo.get(db, client_id)
     if obj is None:
         raise NotFoundError("Клиент не найден")

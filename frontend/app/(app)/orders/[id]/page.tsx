@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Spinner } from "@/components/ui/Spinner";
 import { OrderForm, type OrderFormValues } from "@/components/orders/OrderForm";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import {
   useDeleteOrder,
   useOrder,
@@ -19,7 +19,7 @@ import {
 import { useShipmentsList } from "@/lib/hooks/useShipments";
 import { useSettings } from "@/lib/hooks/useSettings";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import type { OrderItemRead, OrderRead } from "@/lib/types/order";
 import { formatCurrency, formatDate, formatDateTime, formatPercent, formatWeight } from "@/lib/utils/format";
 import { DEFAULT_RAW_PRICE_PER_KG, orderEconomics, orderItemsWeight } from "@/lib/utils/orderEconomics";
@@ -202,11 +202,12 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
   const router = useRouter();
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === UserRole.SUPER_ADMIN || role === UserRole.BOSS;
-  // Зав. складом денег не видит. Доценивать может менеджер по продажам и руководство.
-  const hideMoney = role === UserRole.WAREHOUSE_MANAGER;
-  const canPrice = isAdmin || role === UserRole.SALES_MANAGER;
+  // Полная пересборка (состав + цены) — отдельное право от правки шапки заказа.
+  const canRebuild = useCan(Permission.ORDERS_REBUILD);
+  const canEdit = useCan(Permission.ORDERS_EDIT);
+  const canDelete = useCan(Permission.ORDERS_DELETE);
+  const hideMoney = !useCan(Permission.ORDERS_VIEW_MONEY);
+  const canPrice = useCan(Permission.ORDERS_SET_PRICES);
   const itemColumns = itemColumnsFor(hideMoney);
 
   const { data: order, isLoading, isError, error } = useOrder(orderId);
@@ -235,7 +236,7 @@ export default function OrderDetailPage() {
 
   function handleEditSubmit(values: OrderFormValues) {
     setActionError(null);
-    if (isAdmin) {
+    if (canRebuild) {
       // Полная правка (SA/руководитель): состав + цены — склад и долг пересчитываются.
       replaceOrder.mutate(
         {
@@ -333,12 +334,12 @@ export default function OrderDetailPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        {!editing && (
+        {!editing && (canEdit || canRebuild) && (
           <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
             Редактировать
           </Button>
         )}
-        {isAdmin && (
+        {canDelete && (
           <Button
             variant="secondary"
             size="sm"
@@ -359,7 +360,7 @@ export default function OrderDetailPage() {
 
       {editing ? (
         <Card title="Редактирование заказа">
-          {isAdmin && (
+          {canRebuild && (
             <p className="mb-3 rounded-lg bg-black/[0.03] px-3 py-2 text-[12.5px] text-muted">
               Изменение состава или цен пересчитает склад, отгрузку и долг клиента
               автоматически.
@@ -378,10 +379,10 @@ export default function OrderDetailPage() {
                 comment: item.comment ?? undefined,
               })),
             }}
-            isAdmin={isAdmin}
-            headerOnly={!isAdmin}
+            isAdmin={canRebuild}
+            headerOnly={!canRebuild}
             submitLabel="Сохранить изменения"
-            submitting={isAdmin ? replaceOrder.isPending : updateOrder.isPending}
+            submitting={canRebuild ? replaceOrder.isPending : updateOrder.isPending}
             onSubmit={handleEditSubmit}
             onCancel={() => setEditing(false)}
           />

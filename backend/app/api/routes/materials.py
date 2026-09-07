@@ -1,4 +1,4 @@
-"""Справочник сырья: /api/materials. Скрыт от менеджера по продажам."""
+"""Справочник сырья: /api/materials (права materials.view / manage / delete)."""
 from __future__ import annotations
 
 import uuid
@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DbSession, Pagination
-from app.core.enums import UserRole
+from app.core.access import Permission
 from app.core.exceptions import ConflictError, NotFoundError
-from app.core.permissions import require_roles
+from app.core.permissions import require_permissions
 from app.models import Material, User
 from app.repositories.base import CRUDRepository
 from app.schemas.material import MaterialCreate, MaterialRead, MaterialUpdate
@@ -22,20 +22,9 @@ repo = CRUDRepository(Material, soft_delete=True)
 
 # Сырьё читают SA/B/WM, а также мастер смены — ему нужен Полипропилен как расход
 # в сменном отчёте по спанбонду. Заводить/править справочник по-прежнему только SA/B.
-Reader = Annotated[
-    User,
-    Depends(
-        require_roles(
-            UserRole.SUPER_ADMIN,
-            UserRole.BOSS,
-            UserRole.WAREHOUSE_MANAGER,
-            UserRole.SHIFT_MASTER,
-        )
-    ),
-]
-Writer = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.BOSS))]
-# Удаление — расширенное право, только супер-админ.
-SuperAdminUser = Annotated[User, Depends(require_roles(UserRole.SUPER_ADMIN))]
+Reader = Annotated[User, Depends(require_permissions(Permission.MATERIALS_VIEW))]
+Writer = Annotated[User, Depends(require_permissions(Permission.MATERIALS_MANAGE))]
+Remover = Annotated[User, Depends(require_permissions(Permission.MATERIALS_DELETE))]
 
 
 @router.get("", response_model=Page[MaterialRead])
@@ -102,7 +91,7 @@ async def update_material(
 
 
 @router.delete("/{material_id}", response_model=Message)
-async def delete_material(material_id: uuid.UUID, actor: SuperAdminUser, db: DbSession) -> Message:
+async def delete_material(material_id: uuid.UUID, actor: Remover, db: DbSession) -> Message:
     obj = await repo.get(db, material_id)
     if obj is None:
         raise NotFoundError("Материал не найден")

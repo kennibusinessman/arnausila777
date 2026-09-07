@@ -6,8 +6,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.access import Permission, resolve_permissions
 from app.core.enums import UserRole
 from app.models.base import (
     Base,
@@ -36,6 +38,11 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    # Индивидуальные отклонения от прав роли: {"stock.view": true, "expenses.view": false}.
+    # Пустой словарь = «как у роли».
+    permissions: Mapped[dict[str, bool]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'")
+    )
 
     # Связи
     creator: Mapped[User | None] = relationship(remote_side="User.id")
@@ -45,3 +52,11 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     shift_reports: Mapped[list[ShiftReport]] = relationship(
         back_populates="master", foreign_keys="ShiftReport.master_id"
     )
+
+    @property
+    def effective_permissions(self) -> frozenset[Permission]:
+        """Что пользователю реально разрешено: права роли ± индивидуальные."""
+        return resolve_permissions(self.role, self.permissions)
+
+    def has_permission(self, permission: Permission) -> bool:
+        return permission in self.effective_permissions

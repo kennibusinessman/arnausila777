@@ -7,10 +7,10 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { DetailModal } from "@/components/ui/DetailModal";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Spinner } from "@/components/ui/Spinner";
-import { useAuthStore } from "@/lib/auth/store";
+import { useCan } from "@/lib/auth/permissions";
 import { useAuditLogsList, useDeleteAuditLog } from "@/lib/hooks/useAuditLogs";
 import { apiErrorMessage } from "@/lib/api/http";
-import { UserRole } from "@/lib/types/enums";
+import { Permission } from "@/lib/types/enums";
 import type { AuditLogRead } from "@/lib/types/audit";
 import { formatDateTime } from "@/lib/utils/format";
 import {
@@ -25,8 +25,7 @@ import {
 const PAGE_SIZE = 30;
 
 export default function AuditLogsPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isSuperAdmin = role === UserRole.SUPER_ADMIN;
+  const canDelete = useCan(Permission.AUDIT_DELETE);
 
   const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
@@ -70,7 +69,7 @@ export default function AuditLogsPage() {
         </span>
       ),
     },
-    ...(isSuperAdmin
+    ...(canDelete
       ? [
           {
             header: "",
@@ -233,7 +232,7 @@ export default function AuditLogsPage() {
         }
         actions={
           selected &&
-          isSuperAdmin && (
+          canDelete && (
             <Button
               variant="danger"
               className="flex-1 justify-center"

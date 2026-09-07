@@ -19,9 +19,10 @@ import { Button } from "@/components/ui/Button";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Spinner } from "@/components/ui/Spinner";
 import { CreateShiftReportModal } from "@/components/shiftReports/CreateShiftReportModal";
+import { useCan } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
-import { ShiftReportStatus, ShiftType, UserRole } from "@/lib/types/enums";
+import { Permission, ShiftReportStatus, ShiftType, UserRole } from "@/lib/types/enums";
 import type { ShiftReportListItem } from "@/lib/types/shiftReport";
 import { formatDate, formatNumber } from "@/lib/utils/format";
 import { SHIFT_SHORT_LABELS } from "@/lib/utils/shiftLabels";
@@ -131,14 +132,9 @@ const headClass =
 
 export default function ShiftReportsPage() {
   const router = useRouter();
-  const role = useAuthStore((s) => s.user?.role);
-  const isMaster = role === UserRole.SHIFT_MASTER;
-  // Создавать отчёты могут SA/B, мастер смены и зав. складом.
-  const canCreate =
-    role === UserRole.SUPER_ADMIN ||
-    role === UserRole.BOSS ||
-    role === UserRole.SHIFT_MASTER ||
-    role === UserRole.WAREHOUSE_MANAGER;
+  // «Свои отчёты» (/shift-reports/my) — выборка по роли мастера смены, не по праву.
+  const isMaster = useAuthStore((s) => s.user?.role) === UserRole.SHIFT_MASTER;
+  const canCreate = useCan(Permission.SHIFT_REPORTS_CREATE);
 
   const [status, setStatus] = useState<ShiftReportStatus | "">("");
   const [shiftType, setShiftType] = useState<ShiftType | "">("");
