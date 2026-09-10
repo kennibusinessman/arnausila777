@@ -113,6 +113,8 @@ class BobbinShiftRow(BaseModel):
     master_name: str | None = None
     taken: Decimal
     produced_rolls: Decimal
+    # Смена бабину не брала — она перешла с прошлой смены, но рулоны крутили с неё.
+    carried_over: bool = False
 
 
 class StockReportRow(BaseModel):

@@ -89,6 +89,8 @@ export interface BobbinShiftRow {
   master_name: string | null;
   taken: string;
   produced_rolls: string;
+  /** Смена бабину не брала — она перешла с прошлой смены, но рулоны крутили с неё. */
+  carried_over: boolean;
 }
 
 export interface StockReportRow {

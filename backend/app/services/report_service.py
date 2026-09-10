@@ -790,10 +790,10 @@ async def bobbin_shifts(
 ) -> list[BobbinShiftRow]:
     """Движение одной бабины по сменам за период (хронологически).
 
-    Показываем только смены, в которые эту бабину брали. Рулоны, скрученные с
-    неё в смену, которая её не брала (бабина перешла с прошлой смены), в итог
-    периода входят, но отдельной строкой не показываются — в отчёте эта разница
-    выводится как «перешло со сменой».
+    Строка появляется, если в смене брали эту бабину или крутили с неё рулоны.
+    Смены, которые бабину не брали (она перешла с прошлой), помечены
+    `carried_over` — в отчёте они видны отдельно от тех, где бабину взяли, но с
+    той же датой, сменой и ответственным: видно и где брали, и когда крутили.
     """
     bobbin = await session.get(Product, bobbin_id)
     if bobbin is None or bobbin.deleted_at is not None:
@@ -819,10 +819,11 @@ async def bobbin_shifts(
             master_name=r.master.full_name if r.master else None,
             taken=taken_by_shift.get((r.id, bobbin_id), Decimal(0)),
             produced_rolls=produced_by_shift.get((r.id, bobbin_id), Decimal(0)),
+            carried_over=taken_by_shift.get((r.id, bobbin_id), Decimal(0)) == 0,
         )
         for r in reports.values()
     ]
-    rows = [r for r in rows if r.taken != 0]
+    rows = [r for r in rows if r.taken != 0 or r.produced_rolls != 0]
     rows.sort(key=lambda r: (r.shift_date, r.shift_type.value))
     return rows
 

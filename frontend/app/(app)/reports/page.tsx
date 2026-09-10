@@ -1277,9 +1277,8 @@ function BobbinDetailModal({
   const shifts = data ?? [];
   const takenTotal = shifts.reduce((s, r) => s + Number(r.taken), 0);
   const producedTotal = shifts.reduce((s, r) => s + Number(r.produced_rolls), 0);
-  // В таблице только смены, в которые бабину брали. Остаток до итога периода —
-  // рулоны, скрученные с неё в смену, которая её уже не брала (перешла с прошлой).
-  const carriedOver = Number(row.produced_rolls) - producedTotal;
+  // Смены, которые бабину не брали: она перешла с прошлой, а рулоны крутили с неё.
+  const carriedShifts = shifts.filter((r) => r.carried_over).length;
   const pct = normPct(row);
   const color = diffColor(pct === null ? null : pct - 100);
   const header: { label: string; value: string; color?: string }[] = [
@@ -1310,7 +1309,7 @@ function BobbinDetailModal({
           <Loading />
         ) : shifts.length === 0 ? (
           <p className="py-8 text-center text-[13px] text-muted">
-            За период эту бабину в смены не брали
+            За период эту бабину не брали и рулоны с неё не крутили
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -1342,29 +1341,36 @@ function BobbinDetailModal({
                   style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
                 >
                   <span className="tabular-nums">{formatDate(sh.shift_date)}</span>
-                  <span>{SHIFT_SHORT_LABELS[sh.shift_type]}</span>
+                  <span className="flex items-center gap-1.5">
+                    {SHIFT_SHORT_LABELS[sh.shift_type]}
+                    {sh.carried_over && (
+                      <span
+                        title="Бабину в эту смену не брали — она перешла с прошлой, рулоны крутили с неё"
+                        className="shrink-0 rounded border border-white/70 bg-white/60 px-1.5 py-px text-[10px] font-semibold text-muted"
+                      >
+                        перешла
+                      </span>
+                    )}
+                  </span>
                   <span className="truncate">{sh.master_name ?? "—"}</span>
-                  <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.taken))}</span>
+                  <span
+                    className={clsx(
+                      "text-right font-semibold tabular-nums",
+                      sh.carried_over && "text-muted"
+                    )}
+                  >
+                    {sh.carried_over ? "—" : fmtNum(Number(sh.taken))}
+                  </span>
                   <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.produced_rolls))}</span>
                 </button>
               ))}
-              {Math.abs(carriedOver) > 0.001 && (
-                <div
-                  className="grid gap-3 px-2 py-2.5 text-[13px] text-muted"
-                  style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
-                >
-                  <span className="col-span-3">Перешло со сменой — бабину не брали, но крутили</span>
-                  <span className="text-right tabular-nums">—</span>
-                  <span className="text-right tabular-nums">{fmtNum(carriedOver)}</span>
-                </div>
-              )}
               <div
                 className="mt-1 grid gap-3 border-t border-border px-2 pt-2.5 text-[13px] font-bold text-text"
                 style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
               >
                 <span className="col-span-3">Итого · смен: {shifts.length}</span>
                 <span className="text-right tabular-nums">{fmtNum(takenTotal)}</span>
-                <span className="text-right tabular-nums">{fmtNum(producedTotal + carriedOver)}</span>
+                <span className="text-right tabular-nums">{fmtNum(producedTotal)}</span>
               </div>
               <p className="px-2 pt-2 text-[11.5px] text-muted">
                 {row.expected_rolls
@@ -1374,8 +1380,9 @@ function BobbinDetailModal({
                   : "Норма или привязка к наименованию не задана — отклонение не считается."}{" "}
                 {row.shared_with > 1 &&
                   `Это наименование крутят с ${row.shared_with} бабин: выпуск смены делится между теми, которые в неё брали. `}
-                В таблице — только смены, в которые эту бабину брали; расход и выпуск внутри смены
-                сходиться не обязаны.
+                {carriedShifts > 0
+                  ? "Смены с пометкой «перешла» бабину не брали: она осталась на машине с прошлой смены, и рулоны крутили с неё. Поэтому расход и выпуск внутри смены сходиться не обязаны."
+                  : "Расход и выпуск внутри смены сходиться не обязаны: бабина может перейти на следующую смену."}
                 {canOpenShift && " Клик по строке открывает сменный отчёт."}
               </p>
             </div>
