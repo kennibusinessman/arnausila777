@@ -1277,6 +1277,9 @@ function BobbinDetailModal({
   const shifts = data ?? [];
   const takenTotal = shifts.reduce((s, r) => s + Number(r.taken), 0);
   const producedTotal = shifts.reduce((s, r) => s + Number(r.produced_rolls), 0);
+  // В таблице только смены, в которые бабину брали. Остаток до итога периода —
+  // рулоны, скрученные с неё в смену, которая её уже не брала (перешла с прошлой).
+  const carriedOver = Number(row.produced_rolls) - producedTotal;
   const pct = normPct(row);
   const color = diffColor(pct === null ? null : pct - 100);
   const header: { label: string; value: string; color?: string }[] = [
@@ -1306,7 +1309,9 @@ function BobbinDetailModal({
         {isLoading ? (
           <Loading />
         ) : shifts.length === 0 ? (
-          <p className="py-8 text-center text-[13px] text-muted">За период движения нет</p>
+          <p className="py-8 text-center text-[13px] text-muted">
+            За период эту бабину в смены не брали
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[560px]">
@@ -1343,13 +1348,23 @@ function BobbinDetailModal({
                   <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.produced_rolls))}</span>
                 </button>
               ))}
+              {Math.abs(carriedOver) > 0.001 && (
+                <div
+                  className="grid gap-3 px-2 py-2.5 text-[13px] text-muted"
+                  style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
+                >
+                  <span className="col-span-3">Перешло со сменой — бабину не брали, но крутили</span>
+                  <span className="text-right tabular-nums">—</span>
+                  <span className="text-right tabular-nums">{fmtNum(carriedOver)}</span>
+                </div>
+              )}
               <div
                 className="mt-1 grid gap-3 border-t border-border px-2 pt-2.5 text-[13px] font-bold text-text"
                 style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
               >
                 <span className="col-span-3">Итого · смен: {shifts.length}</span>
                 <span className="text-right tabular-nums">{fmtNum(takenTotal)}</span>
-                <span className="text-right tabular-nums">{fmtNum(producedTotal)}</span>
+                <span className="text-right tabular-nums">{fmtNum(producedTotal + carriedOver)}</span>
               </div>
               <p className="px-2 pt-2 text-[11.5px] text-muted">
                 {row.expected_rolls
@@ -1359,7 +1374,8 @@ function BobbinDetailModal({
                   : "Норма или привязка к наименованию не задана — отклонение не считается."}{" "}
                 {row.shared_with > 1 &&
                   `Это наименование крутят с ${row.shared_with} бабин: выпуск смены делится между теми, которые в неё брали. `}
-                Внутри смены расход и выпуск сходиться не обязаны: бабина могла перейти на следующую смену.
+                В таблице — только смены, в которые эту бабину брали; расход и выпуск внутри смены
+                сходиться не обязаны.
                 {canOpenShift && " Клик по строке открывает сменный отчёт."}
               </p>
             </div>

@@ -3,7 +3,8 @@
 Главный сценарий — бабина, перешедшая на следующую смену: смену 1 её взяли и
 накрутили часть рулонов, смена 2 ничего не брала, но доработала остаток. Внутри
 смены расход и выпуск сходиться не обязаны, поэтому отклонение от нормы
-считается накопительно за период, а в детализации видны обе смены.
+считается накопительно за период. В детализации показываем только те смены, в
+которые бабину брали, — остаток до итога периода идёт строкой «перешло со сменой».
 """
 from __future__ import annotations
 
@@ -121,19 +122,19 @@ async def test_bobbin_carries_over_to_next_shift(client, admin_headers):
     assert float(row["diff_units"]) == -2
     assert row["roll_product_name"] == roll["name"]
 
-    # Детализация: две смены, рулоны распределены по факту производства.
+    # Детализация: только смена, в которую бабину брали. Рулоны второй смены
+    # (бабина перешла на неё) в итог периода вошли, но отдельной строкой не идут —
+    # разницу 18 − 12 отчёт показывает как «перешло со сменой».
     r = await client.get(
         f"/reports/bobbins/{bobbin['id']}/shifts", params=PERIOD, headers=admin_headers
     )
     assert r.status_code == 200, r.text
     detail = r.json()
-    assert len(detail) == 2
-    by_shift = {row["shift_type"]: row for row in detail}
-    assert float(by_shift["SHIFT_1"]["taken"]) == 2
-    assert float(by_shift["SHIFT_1"]["produced_rolls"]) == 12
-    assert float(by_shift["SHIFT_2"]["taken"]) == 0
-    assert float(by_shift["SHIFT_2"]["produced_rolls"]) == 6
-    assert by_shift["SHIFT_1"]["master_name"]
+    assert len(detail) == 1
+    assert detail[0]["shift_type"] == "SHIFT_1"
+    assert float(detail[0]["taken"]) == 2
+    assert float(detail[0]["produced_rolls"]) == 12
+    assert detail[0]["master_name"]
 
 
 async def test_bobbin_without_norm_has_no_expectation(client, admin_headers):
