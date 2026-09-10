@@ -91,7 +91,7 @@ export function OrderForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-text">Срок (необязательно)</label>
+          <label className="mb-1.5 block text-[13px] font-semibold text-text">Дата (необязательно)</label>
           <input
             type="date"
             value={deadline}

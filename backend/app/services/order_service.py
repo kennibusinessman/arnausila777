@@ -54,6 +54,16 @@ def _cannot_price(actor: User) -> bool:
     return not actor.has_permission(Permission.ORDERS_SET_PRICES)
 
 
+def _order_date() -> ColumnElement[date]:
+    """Поле «Дата» заказа для списка: deadline, а если он пуст — дата создания.
+
+    Дата в заказе необязательна, поэтому пустое значение подставляем из
+    created_at — иначе такие заказы выпадали бы из фильтра по периоду и висели
+    в хвосте сортировки. Только чтение: в БД deadline остаётся как есть.
+    """
+    return func.coalesce(Order.deadline, func.date(Order.created_at))
+
+
 def _scope(actor: User) -> list[ColumnElement[bool]]:
     # Менеджер по продажам видит свои заказы + «пул без цен» (созданные зав. складом,
     # total_amount=0), чтобы их можно было доценить.
@@ -286,9 +296,9 @@ def _list_conditions(
     if date_to is not None:
         conditions.append(func.date(Order.created_at) <= date_to)
     if deadline_from is not None:
-        conditions.append(Order.deadline >= deadline_from)
+        conditions.append(_order_date() >= deadline_from)
     if deadline_to is not None:
-        conditions.append(Order.deadline <= deadline_to)
+        conditions.append(_order_date() <= deadline_to)
     if search:
         conditions.append(
             Order.client_id.in_(select(Client.id).where(Client.name.ilike(f"%{search.strip()}%")))
@@ -340,7 +350,12 @@ async def list_orders(
         await session.execute(select(func.count()).select_from(Order).where(*conditions))
     ).scalar_one()
 
-    order_by = Order.created_at.asc() if sort == "asc" else Order.created_at.desc()
+    # Сортировка по полю «Дата» заказа (deadline, пустой — дата создания);
+    # при равных датах — по времени создания.
+    if sort == "asc":
+        order_by = (_order_date().asc(), Order.created_at.asc())
+    else:
+        order_by = (_order_date().desc(), Order.created_at.desc())
     items = (
         await session.execute(
             select(Order)
@@ -350,7 +365,7 @@ async def list_orders(
                 selectinload(Order.items).selectinload(OrderItem.product),
             )
             .where(*conditions)
-            .order_by(order_by)
+            .order_by(*order_by)
             .offset(params.offset)
             .limit(params.limit)
         )

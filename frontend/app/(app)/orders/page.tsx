@@ -115,7 +115,7 @@ function OrderCard({
         <span className="truncate text-[14px] font-semibold text-text">{name}</span>
         <span className="truncate text-xs text-muted">{itemsLabel(order)}</span>
         <span className="text-xs text-muted">
-          {formatDate(order.created_at)} · {formatWeight(order.total_weight)} · {order.items.length} поз.
+          {formatDate(orderDate(order))} · {formatWeight(order.total_weight)} · {order.items.length} поз.
         </span>
         <div className="flex flex-wrap gap-1">
           <ExpenseBadge has={order.has_expense} />
@@ -130,6 +130,11 @@ function OrderCard({
       </div>
     </button>
   );
+}
+
+/** Дата заказа: значение поля «Дата», а если оно не заполнено — дата создания. */
+function orderDate(order: Pick<OrderListItem, "deadline" | "created_at">): string {
+  return order.deadline ?? order.created_at;
 }
 
 /** Поле «лейбл + значение» в сетке деталей поп-апа. */
@@ -176,8 +181,8 @@ function OrderDetailModal({
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
-          <Field label="Дата" value={formatDate(order.created_at)} />
-          <Field label="Срок" value={order.deadline ? formatDate(order.deadline) : "—"} />
+          <Field label="Дата" value={formatDate(orderDate(order))} />
+          <Field label="Создан" value={formatDate(order.created_at)} />
           <Field label="Менеджер" value={order.manager?.full_name ?? "—"} />
           <Field label="Общий вес" value={formatWeight(order.total_weight)} />
           <Field label="В расходах" value={order.has_expense ? "Да" : "Нет"} />
@@ -262,8 +267,9 @@ export default function OrdersPage() {
 
   const filters = {
     search: search || undefined,
-    date_from: dateFrom || undefined,
-    date_to: dateTo || undefined,
+    // Период — по полю «Дата» заказа (deadline), тому же, что в колонке и сортировке.
+    deadline_from: dateFrom || undefined,
+    deadline_to: dateTo || undefined,
     in_expenses: expenseFilter === "all" ? undefined : expenseFilter === "in",
     priced: hideMoney || priceFilter === "all" ? undefined : priceFilter === "priced",
   };
@@ -330,14 +336,7 @@ export default function OrdersPage() {
     },
     {
       header: "Дата",
-      cell: (row) => (
-        <div className="flex flex-col">
-          <span>{formatDate(row.created_at)}</span>
-          {row.deadline && (
-            <span className="text-xs text-muted">срок до {formatDate(row.deadline)}</span>
-          )}
-        </div>
-      ),
+      cell: (row) => <span>{formatDate(orderDate(row))}</span>,
     },
     {
       header: "Наименования",

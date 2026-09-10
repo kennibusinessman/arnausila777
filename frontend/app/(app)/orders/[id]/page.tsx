@@ -317,8 +317,8 @@ export default function OrderDetailPage() {
             <div>{order.manager?.full_name ?? "—"}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold text-muted">Срок</div>
-            <div>{formatDate(order.deadline)}</div>
+            <div className="text-xs font-semibold text-muted">Дата</div>
+            <div>{formatDate(order.deadline ?? order.created_at)}</div>
           </div>
         </div>
         {order.comment && (
