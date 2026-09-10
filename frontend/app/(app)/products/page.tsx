@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
 import { DetailModal } from "@/components/ui/DetailModal";
 import { MobileCardList } from "@/components/ui/MobileCardList";
 import { Modal } from "@/components/ui/Modal";
@@ -89,6 +90,9 @@ export default function ProductsPage() {
 
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("all"); // all | product | material | cat:<name>
+  // Подкатегория внутри выбранной категории («Спанбонд» → Спанбонд/Бабины/Дастархан сырьё).
+  // "" — все подкатегории; сбрасывается при смене категории.
+  const [subcat, setSubcat] = useState("");
   const [stock, setStock] = useState<"all" | "low" | "out">("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [editing, setEditing] = useState<CatalogItem | null>(null);
@@ -109,6 +113,23 @@ export default function ProductsPage() {
     return ordered;
   }, [all]);
 
+  // Подкатегории показываем только когда выбрана конкретная категория и они
+  // реально есть в каталоге: порядок — как в справочнике, «хвост» — по алфавиту.
+  const selectedCat = cat.startsWith("cat:") ? cat.slice(4) : null;
+  const subcatTabs = useMemo(() => {
+    if (!selectedCat) return [];
+    const set = new Set<string>();
+    for (const it of all) {
+      if (it.kind === "product" && it.category === selectedCat && it.subcategory) {
+        set.add(it.subcategory);
+      }
+    }
+    if (set.size === 0) return [];
+    const known = SPUNBOND_SUBCATEGORIES.filter((c) => set.has(c)) as string[];
+    const rest = [...set].filter((c) => !known.includes(c)).sort((a, b) => a.localeCompare(b, "ru"));
+    return [...known, ...rest];
+  }, [all, selectedCat]);
+
   const catTabs = [
     { id: "all", label: "Все" },
     { id: "product", label: "Продукция" },
@@ -122,6 +143,7 @@ export default function ProductsPage() {
       if (cat === "product" && it.kind !== "product") return false;
       if (cat === "material" && it.kind !== "material") return false;
       if (cat.startsWith("cat:") && !(it.kind === "product" && it.category === cat.slice(4))) return false;
+      if (subcat && it.subcategory !== subcat) return false;
       const st = stockStatus(Number(it.quantity), Number(it.min_stock));
       if (stock === "low" && st !== "low") return false;
       if (stock === "out" && st !== "out") return false;
@@ -133,7 +155,7 @@ export default function ProductsPage() {
       if (sort === "price") return Number(b.price) - Number(a.price);
       return a.name.localeCompare(b.name, "ru");
     });
-  }, [all, cat, stock, search, sort]);
+  }, [all, cat, subcat, stock, search, sort]);
 
   const lowCount = all.filter((it) => stockStatus(Number(it.quantity), Number(it.min_stock)) !== "ok").length;
   const totalUnits = all.reduce((s, it) => s + Number(it.quantity), 0);
@@ -146,7 +168,7 @@ export default function ProductsPage() {
     { label: "Стоимость склада", value: formatCompactCurrency(totalValue), valueColor: "#178a55", icon: Coins, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
   ];
 
-  const hasFilter = !!(search || cat !== "all" || stock !== "all");
+  const hasFilter = !!(search || cat !== "all" || subcat || stock !== "all");
   const gridCols = canSeeAuthor
     ? "minmax(0,1.6fr) 160px 70px 120px 132px 130px 170px 84px"
     : "minmax(0,1.6fr) 160px 70px 120px 132px 130px 84px";
@@ -186,7 +208,10 @@ export default function ProductsPage() {
           {catTabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => setCat(t.id)}
+              onClick={() => {
+                setCat(t.id);
+                setSubcat("");
+              }}
               className={clsx(
                 "whitespace-nowrap rounded-lg px-3 py-1.5 text-[12.5px] transition-colors",
                 cat === t.id
@@ -198,6 +223,25 @@ export default function ProductsPage() {
             </button>
           ))}
         </div>
+
+        {subcatTabs.length > 0 && (
+          <div className="flex gap-1 rounded-xl border border-white/70 bg-white/55 p-1">
+            {[{ id: "", label: "Все" }, ...subcatTabs.map((c) => ({ id: c, label: c }))].map((t) => (
+              <button
+                key={t.id || "all"}
+                onClick={() => setSubcat(t.id)}
+                className={clsx(
+                  "whitespace-nowrap rounded-lg px-3 py-1.5 text-[12.5px] transition-colors",
+                  subcat === t.id
+                    ? "bg-white/95 font-semibold text-text shadow-[0_3px_9px_rgba(40,50,90,0.12)]"
+                    : "font-medium text-muted hover:text-text"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-1 rounded-xl border border-white/70 bg-white/55 p-1">
           {([["all", "Все остатки"], ["low", "Заканчивается"], ["out", "Нет в наличии"]] as const).map(([id, label]) => (
@@ -221,6 +265,7 @@ export default function ProductsPage() {
             onClick={() => {
               setSearch("");
               setCat("all");
+              setSubcat("");
               setStock("all");
             }}
             className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-bg"
@@ -581,15 +626,21 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
   const isBobbin = !isMaterial && form.category === SPUNBOND && form.subcategory === BOBBIN_SUBCATEGORY;
   const canSetNorm = useCan(Permission.PRODUCTS_SET_NORM);
   const { data: catalogItems } = useCatalog();
-  const rollOptions = useMemo(
+  const rollOptions: ComboboxOption[] = useMemo(
     () =>
-      (catalogItems ?? []).filter(
-        (it) =>
-          it.kind === "product" &&
-          it.is_active &&
-          it.id !== item?.id &&
-          it.subcategory !== BOBBIN_SUBCATEGORY
-      ),
+      (catalogItems ?? [])
+        .filter(
+          (it) =>
+            it.kind === "product" &&
+            it.is_active &&
+            it.id !== item?.id &&
+            it.subcategory !== BOBBIN_SUBCATEGORY
+        )
+        .map((it) => ({
+          value: it.id,
+          label: it.name,
+          sublabel: it.category ?? undefined,
+        })),
     [catalogItems, item?.id]
   );
   const requiresWeight = form.category === SPUNBOND || form.category === "Одноразовые простыни";
@@ -769,19 +820,13 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[12px] font-semibold text-muted">Наименование продукции</label>
-              <select
-                value={form.roll_product_id}
-                onChange={(e) => set("roll_product_id", e.target.value)}
+              <Combobox
+                value={form.roll_product_id || null}
+                onChange={(v) => set("roll_product_id", v ?? "")}
+                options={rollOptions}
                 disabled={!canSetNorm}
-                className={clsx(inputCls, !canSetNorm && "opacity-60")}
-              >
-                <option value="">Не привязано</option>
-                {rollOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Найти наименование…"
+              />
             </div>
             <p className="col-span-2 text-[11.5px] text-muted">
               {canSetNorm
