@@ -9,6 +9,8 @@ import {
   Package,
   Plus,
   Scale,
+  Search,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
@@ -139,6 +141,9 @@ export default function StockPage() {
   const [subcategoryFilter, setSubcategoryFilter] = useState<string | null>(null);
   const [noWeightOnly, setNoWeightOnly] = useState(false);
   const [availability, setAvailability] = useState<"in" | "all">("in");
+  // Поиск по наименованию. Остатки грузятся одним запросом целиком, поэтому
+  // фильтруем на клиенте — без обращения к API на каждую букву.
+  const [search, setSearch] = useState("");
   const [movementType, setMovementType] = useState<MovementType | "">("");
   const [page, setPage] = useState(1);
   const [showAdjust, setShowAdjust] = useState(false);
@@ -229,14 +234,27 @@ export default function StockPage() {
         (r) => r.item_type === ItemType.PRODUCT && (!r.base_weight || r.base_weight <= 0)
       );
     }
+    // Поиск по наименованию: подстрока, регистр и лишние пробелы не важны.
+    const query = norm(search);
+    if (query) {
+      filtered = filtered.filter((r) => norm(r.name).includes(query));
+    }
     return filtered;
-  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView, noWeightOnly]);
+  }, [aggregatedBalances, categoryFilter, subcategoryFilter, isRawView, noWeightOnly, search]);
 
   // Сколько позиций текущего раздела скрывает режим «В наличии» (нулевые и ушедшие в минус).
   const outOfStockCount = useMemo(
     () => filteredBalances.filter((r) => r.quantity <= 0).length,
     [filteredBalances]
   );
+
+  // Сколько позиций отвечает запросу вообще, без чипов категорий и режима «В наличии».
+  // Нужно, чтобы не показывать пустой список, когда позиция есть, но скрыта фильтрами.
+  const searchHitsAnywhere = useMemo(() => {
+    const query = norm(search);
+    if (!query) return 0;
+    return aggregatedBalances.filter((r) => norm(r.name).includes(query)).length;
+  }, [aggregatedBalances, search]);
 
   // «В наличии» — только позиции с остатком > 0, «Все» — включая нулевые и минусовые.
   const sortedBalances = useMemo(() => {
@@ -438,6 +456,28 @@ export default function StockPage() {
     "grid grid-cols-[minmax(220px,1.7fr)_minmax(150px,1fr)_130px_120px_140px_28px] items-center gap-3";
   const headCls = "text-[11px] font-semibold uppercase tracking-[0.04em] text-muted";
 
+  const query = search.trim();
+  const emptyText = query ? `По запросу «${query}» ничего не найдено` : "Остатков не найдено";
+  // Позиция под запрос есть, но её прячут чипы категорий / «В наличии» / «Без веса».
+  const hiddenByFilters = query !== "" && sortedBalances.length === 0 && searchHitsAnywhere > 0;
+
+  function showSearchEverywhere() {
+    setCategoryFilter(null);
+    setSubcategoryFilter(null);
+    setNoWeightOnly(false);
+    setAvailability("all");
+  }
+
+  const searchHint = hiddenByFilters ? (
+    <button
+      type="button"
+      onClick={showSearchEverywhere}
+      className="mt-2 rounded-lg bg-white/70 px-3 py-1.5 text-[12.5px] font-medium text-primary transition-colors hover:bg-white"
+    >
+      Найдено в других разделах: {searchHitsAnywhere} — показать
+    </button>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-4">
       {/* ===== TOP BAR: вкладки + действие ===== */}
@@ -462,6 +502,32 @@ export default function StockPage() {
             </button>
           ))}
         </div>
+
+        {tab === "balances" && (
+          <div className="relative w-full sm:w-72">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              strokeWidth={2}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по наименованию…"
+              className="w-full rounded-xl border-[1.5px] border-border bg-white/70 py-1.5 pl-9 pr-8 text-[13px] text-text outline-none focus:border-primary/50"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                title="Очистить поиск"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted transition-colors hover:bg-black/[0.06] hover:text-text"
+              >
+                <X className="h-3.5 w-3.5" strokeWidth={2.4} />
+              </button>
+            )}
+          </div>
+        )}
 
         {tab === "movements" && (
           <select
@@ -629,7 +695,10 @@ export default function StockPage() {
                   </div>
 
                   {sortedBalances.length === 0 ? (
-                    <p className="py-12 text-center text-sm text-muted">Остатков не найдено</p>
+                    <div className="flex flex-col items-center py-12">
+                      <p className="text-center text-sm text-muted">{emptyText}</p>
+                      {searchHint}
+                    </div>
                   ) : (
                     sortedBalances.map((row) => {
                       const known = CATEGORY_ORDER.find((c) => norm(c) === norm(row.category));
@@ -717,7 +786,7 @@ export default function StockPage() {
               rows={sortedBalances}
               keyField={(row) => row.key}
               isLoading={balances.isLoading}
-              emptyMessage="Остатков не найдено"
+              emptyMessage={emptyText}
               renderCard={(row) => {
                 const known = CATEGORY_ORDER.find((c) => norm(c) === norm(row.category));
                 const catColor = known ? CATEGORY_COLOR[known] ?? "#5b8def" : null;
@@ -769,6 +838,9 @@ export default function StockPage() {
                 );
               }}
             />
+
+            {/* Та же подсказка на телефоне: список карточек своих кнопок не рендерит. */}
+            {searchHint && <div className="flex justify-center lg:hidden">{searchHint}</div>}
           </div>
         </>
       ) : movements.isLoading ? (
