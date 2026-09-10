@@ -1,5 +1,5 @@
 /** Зеркало backend/app/schemas/report.py */
-import type { ExpenseCategoryType, ItemType, RevenueMode } from "./enums";
+import type { ExpenseCategoryType, ItemType, RevenueMode, ShiftType } from "./enums";
 
 export interface DebtRow {
   client_id: string;
@@ -60,6 +60,32 @@ export interface ProductionRow {
   unit: string;
   total_quantity: string;
   total_defect: string;
+}
+
+/** Строка отчёта по бабинам за период. Пустые expected_rolls/diff_units —
+ *  у бабины нет нормы или привязки к наименованию (в отчёте прочерк). */
+export interface BobbinRow {
+  bobbin_id: string;
+  bobbin_name: string;
+  sku: string | null;
+  roll_norm: number | null;
+  roll_product_id: string | null;
+  roll_product_name: string | null;
+  taken: string;
+  expected_rolls: string | null;
+  produced_rolls: string;
+  diff_units: string | null;
+}
+
+/** Движение бабины в разрезе смен: строка на смену, где брали бабину
+ *  или выпускали привязанное наименование. */
+export interface BobbinShiftRow {
+  shift_report_id: string;
+  shift_date: string;
+  shift_type: ShiftType;
+  master_name: string | null;
+  taken: string;
+  produced_rolls: string;
 }
 
 export interface StockReportRow {

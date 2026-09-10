@@ -66,6 +66,9 @@ class Permission(str, Enum):
     PRODUCTS_CREATE = "products.create"
     PRODUCTS_EDIT = "products.edit"
     PRODUCTS_DELETE = "products.delete"
+    # Норма выхода рулонов с бабины и привязка бабины к наименованию продукции.
+    # Отделено от products.edit: норму задаёт только СА, править карточку могут и другие.
+    PRODUCTS_SET_NORM = "products.set_norm"
 
     MATERIALS_VIEW = "materials.view"
     MATERIALS_MANAGE = "materials.manage"
@@ -127,6 +130,7 @@ PERMISSION_LABELS: dict[Permission, str] = {
     P.PRODUCTS_CREATE: "Заводить товары",
     P.PRODUCTS_EDIT: "Править товары",
     P.PRODUCTS_DELETE: "Удалять товары",
+    P.PRODUCTS_SET_NORM: "Задавать норму выхода бабин",
     P.MATERIALS_VIEW: "Видеть материалы",
     P.MATERIALS_MANAGE: "Заводить и править материалы",
     P.MATERIALS_DELETE: "Удалять материалы",
@@ -208,6 +212,7 @@ PERMISSION_GROUPS: list[tuple[str, tuple[Permission, ...]]] = [
             P.PRODUCTS_CREATE,
             P.PRODUCTS_EDIT,
             P.PRODUCTS_DELETE,
+            P.PRODUCTS_SET_NORM,
             P.MATERIALS_VIEW,
             P.MATERIALS_MANAGE,
             P.MATERIALS_DELETE,
@@ -243,6 +248,7 @@ _BOSS: frozenset[Permission] = frozenset(Permission) - {
     P.STOCK_DELETE_MOVEMENT,
     P.EXPENSES_DELETE,
     P.PRODUCTS_DELETE,
+    P.PRODUCTS_SET_NORM,
     P.MATERIALS_DELETE,
     P.USERS_DELETE,
     P.USERS_PERMISSIONS,

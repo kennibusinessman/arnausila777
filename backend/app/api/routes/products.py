@@ -7,9 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
+from sqlalchemy import select
+
 from app.api.deps import DbSession, Pagination
 from app.core.access import Permission
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.catalog import is_bobbin
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.core.permissions import require_permissions
 from app.models import Product, User
 from app.repositories.base import CRUDRepository
@@ -28,6 +31,63 @@ Reader = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_VIEW))]
 Writer = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_EDIT))]
 Creator = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_CREATE))]
 Remover = Annotated[User, Depends(require_permissions(Permission.PRODUCTS_DELETE))]
+
+
+NORM_FIELDS = ("roll_norm", "roll_product_id")
+
+
+async def _check_norm_fields(
+    db: DbSession,
+    actor: User,
+    payload: dict,
+    *,
+    category: str | None,
+    subcategory: str | None,
+    product_id: uuid.UUID | None = None,
+) -> None:
+    """Проверки для нормы выхода бабин (payload — только переданные поля).
+
+    Норму и привязку меняет отдельное право (по умолчанию только супер-админ),
+    поля осмысленны лишь у бабин, а одно наименование продукции привязано ровно
+    к одной бабине — иначе её выпуск попал бы в две строки отчёта и итог задвоился.
+    """
+    # Важно: присутствие ключа = осознанная правка, даже если значение None
+    # (сброс нормы — тоже правка). Поэтому на вход идёт model_dump(exclude_unset=True),
+    # иначе создание любого товара требовало бы права на норму.
+    touched = {f: payload[f] for f in NORM_FIELDS if f in payload}
+    if not touched:
+        return
+    if not actor.has_permission(Permission.PRODUCTS_SET_NORM):
+        raise ForbiddenError("Норму выхода бабин и привязку задаёт только супер-админ")
+    if all(v is None for v in touched.values()):
+        return  # сброс нормы: проверять привязку и подкатегорию уже не нужно
+    if not is_bobbin(category, subcategory):
+        raise BadRequestError(
+            "Норма выхода задаётся только у бабин (категория «Спанбонд», подкатегория «Бабины»)"
+        )
+
+    roll_product_id = touched.get("roll_product_id")
+    if roll_product_id is None:
+        return
+    if roll_product_id == product_id:
+        raise BadRequestError("Бабину нельзя привязать саму к себе")
+    target = await repo.get(db, roll_product_id)
+    if target is None:
+        raise BadRequestError("Наименование продукции не найдено")
+    if not target.is_active:
+        raise BadRequestError(f"Товар «{target.name}» неактивен")
+    conditions = [
+        Product.roll_product_id == roll_product_id,
+        Product.deleted_at.is_(None),
+    ]
+    if product_id is not None:
+        conditions.append(Product.id != product_id)
+    taken = (await db.execute(select(Product.name).where(*conditions))).scalars().first()
+    if taken is not None:
+        raise ConflictError(
+            f"Наименование «{target.name}» уже привязано к бабине «{taken}». "
+            "Одно наименование — одна бабина."
+        )
 
 
 @router.get("", response_model=Page[ProductRead])
@@ -72,6 +132,13 @@ async def get_catalog(actor: Reader, db: DbSession) -> CatalogResponse:
 
 @router.post("", response_model=ProductRead, status_code=201)
 async def create_product(data: ProductCreate, actor: Creator, db: DbSession) -> ProductRead:
+    await _check_norm_fields(
+        db,
+        actor,
+        data.model_dump(exclude_unset=True),
+        category=data.category,
+        subcategory=data.subcategory,
+    )
     try:
         obj = await repo.create(db, {**data.model_dump(), "created_by": actor.id})
         await audit_service.log(
@@ -105,8 +172,18 @@ async def update_product(
     obj = await repo.get(db, product_id)
     if obj is None:
         raise NotFoundError("Товар не найден")
+    payload = data.model_dump(exclude_unset=True)
+    # Категория/подкатегория могут меняться этим же запросом — проверяем по итоговым.
+    await _check_norm_fields(
+        db,
+        actor,
+        payload,
+        category=payload.get("category", obj.category),
+        subcategory=payload.get("subcategory", obj.subcategory),
+        product_id=obj.id,
+    )
     try:
-        await repo.update(db, obj, data.model_dump(exclude_unset=True))
+        await repo.update(db, obj, payload)
         await db.commit()
     except IntegrityError:
         await db.rollback()

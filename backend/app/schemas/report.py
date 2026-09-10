@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.core.enums import ExpenseCategoryType, ItemType, RevenueMode
+from app.core.enums import ExpenseCategoryType, ItemType, RevenueMode, ShiftType
 
 
 # --- Дебиторка ---
@@ -75,6 +75,41 @@ class ProductionRow(BaseModel):
     unit: str
     total_quantity: Decimal
     total_defect: Decimal
+
+
+# --- Бабины: норма выхода рулонов и факт ---
+
+class BobbinRow(BaseModel):
+    """Строка отчёта по бабинам за период (одна карточка бабины).
+
+    `expected_rolls` и `diff_units` пустые, если у бабины нет нормы или привязки
+    к наименованию — норма это ориентир, её может не быть. Процент выполнения
+    считает фронт: produced / expected.
+    """
+
+    bobbin_id: uuid.UUID
+    bobbin_name: str
+    sku: str | None = None
+    roll_norm: int | None = None
+    roll_product_id: uuid.UUID | None = None
+    roll_product_name: str | None = None
+    taken: Decimal              # взято бабин за период (штук)
+    expected_rolls: Decimal | None = None   # взято × норма
+    produced_rolls: Decimal     # выпуск привязанного наименования за период
+    diff_units: Decimal | None = None       # факт − ожидание
+
+
+class BobbinShiftRow(BaseModel):
+    """Движение бабины в разрезе смен: строка на смену, где брали бабину или
+    выпускали привязанное наименование. Внутри смены расход и выпуск сходиться
+    не обязаны — бабина могла перейти на следующую смену."""
+
+    shift_report_id: uuid.UUID
+    shift_date: date
+    shift_type: ShiftType
+    master_name: str | None = None
+    taken: Decimal
+    produced_rolls: Decimal
 
 
 class StockReportRow(BaseModel):

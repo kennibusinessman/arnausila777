@@ -10,6 +10,10 @@ export interface ProductCreate {
   base_weight?: string | null;
   min_stock?: string;
   is_active?: boolean;
+  /** Только у бабин: норма выхода рулонов и привязанное наименование продукции.
+   *  Меняются по праву products.set_norm. */
+  roll_norm?: number | null;
+  roll_product_id?: string | null;
 }
 
 export interface ProductUpdate {
@@ -22,6 +26,8 @@ export interface ProductUpdate {
   base_weight?: string | null;
   min_stock?: string | null;
   is_active?: boolean | null;
+  roll_norm?: number | null;
+  roll_product_id?: string | null;
 }
 
 export interface ProductRead {
@@ -35,6 +41,8 @@ export interface ProductRead {
   base_weight: string | null;
   min_stock: string;
   is_active: boolean;
+  roll_norm: number | null;
+  roll_product_id: string | null;
   created_at: string;
 }
 
@@ -54,6 +62,11 @@ export interface CatalogItem {
   min_stock: string;
   quantity: string;
   is_active: boolean;
+  /** Норма выхода рулонов с бабины и наименование продукции, которое из неё
+   *  крутят (только у позиций подкатегории «Бабины»). */
+  roll_norm: number | null;
+  roll_product_id: string | null;
+  roll_product_name: string | null;
   /** Кто и когда завёл позицию. Приходит только с правом «журнал аудита»;
    *  у позиций, заведённых до появления этой колонки, автор неизвестен (null). */
   created_by_name: string | null;

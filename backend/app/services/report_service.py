@@ -19,7 +19,10 @@ from decimal import Decimal
 
 from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.core.catalog import is_bobbin
+from app.core.exceptions import NotFoundError
 from app.core.enums import (
     ItemType,
     MovementType,
@@ -36,6 +39,7 @@ from app.models import (
     Payment,
     Product,
     ShiftReport,
+    ShiftReportMaterial,
     ShiftReportOutput,
     Shipment,
     ShipmentItem,
@@ -52,6 +56,8 @@ from app.schemas.client import (
 )
 from app.schemas.product import CatalogItem, CatalogResponse
 from app.schemas.report import (
+    BobbinRow,
+    BobbinShiftRow,
     DashboardResponse,
     DebtRow,
     DebtsResponse,
@@ -313,6 +319,18 @@ async def catalog(session: AsyncSession) -> CatalogResponse:
             ).all()
         )
 
+    # Привязка бабины к наименованию продукции — показываем её имя в карточке.
+    roll_ids = {p.roll_product_id for p in products if p.roll_product_id is not None}
+    roll_names: dict[uuid.UUID, str] = {}
+    if roll_ids:
+        roll_names = dict(
+            (
+                await session.execute(
+                    select(Product.id, Product.name).where(Product.id.in_(roll_ids))
+                )
+            ).all()
+        )
+
     items: list[CatalogItem] = []
     for p in products:
         items.append(
@@ -329,6 +347,9 @@ async def catalog(session: AsyncSession) -> CatalogResponse:
                 min_stock=p.min_stock,
                 quantity=Decimal(prod_qty.get(p.id, 0)),
                 is_active=p.is_active,
+                roll_norm=p.roll_norm,
+                roll_product_id=p.roll_product_id,
+                roll_product_name=roll_names.get(p.roll_product_id) if p.roll_product_id else None,
                 created_by_name=authors.get(p.created_by) if p.created_by else None,
                 created_at=p.created_at,
             )
@@ -549,6 +570,189 @@ async def production(
             total_quantity=Decimal(qty), total_defect=Decimal(defect),
         )
         for pid, name, sku, unit, qty, defect in rows
+    ]
+
+
+async def _load_bobbins(session: AsyncSession) -> list[Product]:
+    """Карточки бабин: «Спанбонд» → «Бабины».
+
+    Отбор идёт в Python, а не условием в SQL: сравнение регистронезависимое, а
+    `lower()` в SQLite не трогает кириллицу — такой фильтр молча давал бы пустой
+    результат на любой БД кроме Postgres. Справочник маленький, и каталог его
+    и так вычитывает целиком.
+    """
+    products = (
+        await session.execute(
+            select(Product).where(Product.deleted_at.is_(None)).order_by(Product.name.asc())
+        )
+    ).scalars().all()
+    return [p for p in products if is_bobbin(p.category, p.subcategory)]
+
+
+async def bobbins(
+    session: AsyncSession, *, date_from: date | None, date_to: date | None
+) -> list[BobbinRow]:
+    """Бабины за период: взято штук, ожидалось рулонов по норме, выпущено фактически.
+
+    Расход бабин и выпуск рулонов внутри одной смены сходиться не обязаны —
+    бабина может перейти на следующую смену, — поэтому и то и другое считается
+    накопительно за весь период, а отклонение оценивается по итогу. Считаем
+    только утверждённые смены, как и остальные отчёты.
+    """
+    bobbin_rows = await _load_bobbins(session)
+    if not bobbin_rows:
+        return []
+
+    shift_filter = (
+        ShiftReport.status == ShiftReportStatus.APPROVED,
+        *_between(ShiftReport.shift_date, date_from, date_to),
+    )
+
+    # Взято бабин: строки расхода сырья, ссылающиеся на карточку бабины.
+    taken_map = dict(
+        (
+            await session.execute(
+                select(
+                    ShiftReportMaterial.product_id,
+                    func.coalesce(func.sum(ShiftReportMaterial.quantity_used), 0),
+                )
+                .join(ShiftReport, ShiftReport.id == ShiftReportMaterial.shift_report_id)
+                .where(
+                    ShiftReportMaterial.product_id.in_([b.id for b in bobbin_rows]),
+                    *shift_filter,
+                )
+                .group_by(ShiftReportMaterial.product_id)
+            )
+        ).all()
+    )
+
+    # Выпуск привязанных наименований. Наименование привязано ровно к одной бабине
+    # (проверка при сохранении карточки), поэтому двойного счёта тут быть не может.
+    roll_ids = {b.roll_product_id for b in bobbin_rows if b.roll_product_id is not None}
+    produced_map: dict[uuid.UUID, Decimal] = {}
+    roll_names: dict[uuid.UUID, str] = {}
+    if roll_ids:
+        produced_map = dict(
+            (
+                await session.execute(
+                    select(
+                        ShiftReportOutput.product_id,
+                        func.coalesce(func.sum(ShiftReportOutput.quantity), 0),
+                    )
+                    .join(ShiftReport, ShiftReport.id == ShiftReportOutput.shift_report_id)
+                    .where(ShiftReportOutput.product_id.in_(roll_ids), *shift_filter)
+                    .group_by(ShiftReportOutput.product_id)
+                )
+            ).all()
+        )
+        roll_names = dict(
+            (
+                await session.execute(
+                    select(Product.id, Product.name).where(Product.id.in_(roll_ids))
+                )
+            ).all()
+        )
+
+    rows: list[BobbinRow] = []
+    for b in bobbin_rows:
+        taken = Decimal(taken_map.get(b.id, 0))
+        produced = Decimal(
+            produced_map.get(b.roll_product_id, 0) if b.roll_product_id else 0
+        )
+        # Бабина попадает в отчёт, если за период её брали или выпускали её рулоны.
+        if taken == 0 and produced == 0:
+            continue
+        expected = taken * b.roll_norm if b.roll_norm else None
+        rows.append(
+            BobbinRow(
+                bobbin_id=b.id,
+                bobbin_name=b.name,
+                sku=b.sku,
+                roll_norm=b.roll_norm,
+                roll_product_id=b.roll_product_id,
+                roll_product_name=roll_names.get(b.roll_product_id) if b.roll_product_id else None,
+                taken=taken,
+                expected_rolls=expected,
+                produced_rolls=produced,
+                diff_units=(produced - expected) if expected is not None else None,
+            )
+        )
+    rows.sort(key=lambda r: (-r.taken, r.bobbin_name))
+    return rows
+
+
+async def bobbin_shifts(
+    session: AsyncSession,
+    bobbin_id: uuid.UUID,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+) -> list[BobbinShiftRow]:
+    """Движение одной бабины по сменам за период (хронологически).
+
+    Строка появляется, если в смене брали эту бабину ИЛИ выпускали привязанное
+    наименование, — именно так виден переход бабины на следующую смену: смена 1
+    взяла бабину и выпустила часть рулонов, смена 2 ничего не брала, но
+    доработала остаток.
+    """
+    bobbin = await session.get(Product, bobbin_id)
+    if bobbin is None or bobbin.deleted_at is not None:
+        raise NotFoundError("Бабина не найдена")
+
+    shift_filter = (
+        ShiftReport.status == ShiftReportStatus.APPROVED,
+        *_between(ShiftReport.shift_date, date_from, date_to),
+    )
+    taken_map = dict(
+        (
+            await session.execute(
+                select(
+                    ShiftReport.id,
+                    func.coalesce(func.sum(ShiftReportMaterial.quantity_used), 0),
+                )
+                .join(ShiftReportMaterial, ShiftReportMaterial.shift_report_id == ShiftReport.id)
+                .where(ShiftReportMaterial.product_id == bobbin_id, *shift_filter)
+                .group_by(ShiftReport.id)
+            )
+        ).all()
+    )
+    produced_map: dict[uuid.UUID, Decimal] = {}
+    if bobbin.roll_product_id is not None:
+        produced_map = dict(
+            (
+                await session.execute(
+                    select(
+                        ShiftReport.id,
+                        func.coalesce(func.sum(ShiftReportOutput.quantity), 0),
+                    )
+                    .join(ShiftReportOutput, ShiftReportOutput.shift_report_id == ShiftReport.id)
+                    .where(ShiftReportOutput.product_id == bobbin.roll_product_id, *shift_filter)
+                    .group_by(ShiftReport.id)
+                )
+            ).all()
+        )
+
+    report_ids = set(taken_map) | set(produced_map)
+    if not report_ids:
+        return []
+    reports = (
+        await session.execute(
+            select(ShiftReport)
+            .options(selectinload(ShiftReport.master))
+            .where(ShiftReport.id.in_(report_ids))
+            .order_by(ShiftReport.shift_date.asc(), ShiftReport.shift_type.asc())
+        )
+    ).scalars().all()
+    return [
+        BobbinShiftRow(
+            shift_report_id=r.id,
+            shift_date=r.shift_date,
+            shift_type=r.shift_type,
+            master_name=r.master.full_name if r.master else None,
+            taken=Decimal(taken_map.get(r.id, 0)),
+            produced_rolls=Decimal(produced_map.get(r.id, 0)),
+        )
+        for r in reports
     ]
 
 

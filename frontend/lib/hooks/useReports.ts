@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  getBobbinShifts,
+  getBobbins,
   getDebts,
   getPeriodSummary,
   getPnL,
@@ -31,6 +33,22 @@ export function useProductionReport(params: PeriodParams) {
   return useQuery({
     queryKey: ["report-production", params],
     queryFn: () => getProduction(params).then((r) => r.data),
+  });
+}
+
+export function useBobbinsReport(params: PeriodParams) {
+  return useQuery({
+    queryKey: ["report-bobbins", params],
+    queryFn: () => getBobbins(params).then((r) => r.data),
+  });
+}
+
+/** Детализация по сменам для одной бабины (грузится при открытии поп-апа). */
+export function useBobbinShifts(bobbinId: string | null, params: PeriodParams) {
+  return useQuery({
+    queryKey: ["report-bobbin-shifts", bobbinId, params],
+    queryFn: () => getBobbinShifts(bobbinId!, params).then((r) => r.data),
+    enabled: !!bobbinId,
   });
 }
 

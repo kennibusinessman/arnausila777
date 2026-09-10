@@ -29,9 +29,11 @@ import { Permission } from "@/lib/types/enums";
 import type { CatalogItem } from "@/lib/types/product";
 import { formatCompactCurrency, formatCurrency, formatDateTime, formatNumber } from "@/lib/utils/format";
 import { PRODUCT_CATEGORIES, SPUNBOND_SUBCATEGORIES, defaultUnit } from "@/lib/utils/productCategories";
+import { SPUNBOND_SUBCATEGORY } from "@/lib/utils/shiftRawRules";
 
 const MATERIAL = "__material__";
 const SPUNBOND = "Спанбонд";
+const BOBBIN_SUBCATEGORY = SPUNBOND_SUBCATEGORY.BOBBINS;
 
 type StockStatus = "ok" | "low" | "out";
 type SortKey = "name" | "qty" | "price";
@@ -470,6 +472,15 @@ export default function ProductsPage() {
                   : [{ label: "Цена", value: formatCurrency(selected.price) }]),
                 { label: "Мин. остаток", value: qtyLabel(Number(selected.min_stock)) },
                 { label: "Статус", value: STATUS_META[stockStatus(Number(selected.quantity), Number(selected.min_stock))].label },
+                ...(selected.subcategory === BOBBIN_SUBCATEGORY
+                  ? [
+                      {
+                        label: "Норма выхода",
+                        value: selected.roll_norm != null ? `${selected.roll_norm} рул. с бабины` : "—",
+                      },
+                      { label: "Наименование продукции", value: selected.roll_product_name ?? "—" },
+                    ]
+                  : []),
                 ...(canSeeAuthor
                   ? [
                       { label: "Кто создал", value: selected.created_by_name ?? "—" },
@@ -532,6 +543,8 @@ interface FormState {
   base_weight: string;
   min_stock: string;
   is_active: boolean;
+  roll_norm: string;
+  roll_product_id: string;
 }
 
 function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose: () => void }) {
@@ -548,8 +561,10 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
           base_weight: item.base_weight ?? "",
           min_stock: item.min_stock,
           is_active: item.is_active,
+          roll_norm: item.roll_norm != null ? String(item.roll_norm) : "",
+          roll_product_id: item.roll_product_id ?? "",
         }
-      : { category: "", name: "", sku: "", subcategory: "", unit: "шт", price: "0", base_weight: "", min_stock: "0", is_active: true }
+      : { category: "", name: "", sku: "", subcategory: "", unit: "шт", price: "0", base_weight: "", min_stock: "0", is_active: true, roll_norm: "", roll_product_id: "" }
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -561,6 +576,22 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
 
   const isMaterial = form.category === MATERIAL;
   const requiresSub = form.category === SPUNBOND;
+  // Норма выхода осмысленна только у бабин (Спанбонд → Бабины) и меняется по
+  // отдельному праву; остальные роли видят её на чтение.
+  const isBobbin = !isMaterial && form.category === SPUNBOND && form.subcategory === BOBBIN_SUBCATEGORY;
+  const canSetNorm = useCan(Permission.PRODUCTS_SET_NORM);
+  const { data: catalogItems } = useCatalog();
+  const rollOptions = useMemo(
+    () =>
+      (catalogItems ?? []).filter(
+        (it) =>
+          it.kind === "product" &&
+          it.is_active &&
+          it.id !== item?.id &&
+          it.subcategory !== BOBBIN_SUBCATEGORY
+      ),
+    [catalogItems, item?.id]
+  );
   const requiresWeight = form.category === SPUNBOND || form.category === "Одноразовые простыни";
 
   // Дефолт единицы следует за типом позиции: сырьё и полуфабрикат-спанбонд — «кг»,
@@ -622,6 +653,14 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
         base_weight: form.base_weight || null,
         min_stock: form.min_stock || "0",
         is_active: form.is_active,
+        // Поля нормы отправляем только при наличии права — иначе бэкенд ответит 403
+        // (и правильно: обычная правка карточки не должна её ни менять, ни стирать).
+        ...(canSetNorm
+          ? {
+              roll_norm: isBobbin && form.roll_norm ? Number(form.roll_norm) : null,
+              roll_product_id: isBobbin ? form.roll_product_id || null : null,
+            }
+          : {}),
       };
       mutation =
         item && item.kind === "product"
@@ -712,6 +751,45 @@ function CatalogItemModal({ item, onClose }: { item: CatalogItem | null; onClose
           <input type="checkbox" checked={form.is_active} onChange={(e) => set("is_active", e.target.checked)} />
           Активна
         </label>
+
+        {isBobbin && (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-semibold text-muted">
+                Норма выхода, рулонов с бабины
+              </label>
+              <input
+                value={form.roll_norm}
+                onChange={(e) => set("roll_norm", e.target.value.replace(/[^\d]/g, ""))}
+                disabled={!canSetNorm}
+                placeholder="необязательно"
+                inputMode="numeric"
+                className={clsx(inputCls, "font-semibold", !canSetNorm && "opacity-60")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[12px] font-semibold text-muted">Наименование продукции</label>
+              <select
+                value={form.roll_product_id}
+                onChange={(e) => set("roll_product_id", e.target.value)}
+                disabled={!canSetNorm}
+                className={clsx(inputCls, !canSetNorm && "opacity-60")}
+              >
+                <option value="">Не привязано</option>
+                {rollOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="col-span-2 text-[11.5px] text-muted">
+              {canSetNorm
+                ? "Норма — ориентир для отчёта по бабинам, а не ограничение. Одно наименование привязано ровно к одной бабине."
+                : "Норму выхода и привязку меняет только супер-админ."}
+            </p>
+          </>
+        )}
 
         <p className="col-span-2 text-[11.5px] text-muted">
           Количество меняется на странице «Остатки» — складскими движениями, а не вручную здесь.

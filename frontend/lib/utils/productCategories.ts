@@ -39,8 +39,12 @@ export function rawSubcategoryOf(material: { name: string; category: string | nu
 /**
  * Полуфабрикат-спанбонд, который меряется в килограммах, а не в штуках
  * (идёт в простыни и дастархан — см. lib/utils/shiftRawRules.ts).
+ *
+ * Бабины сюда НЕ входят: их считают штуками, а вес одной бабины хранится
+ * отдельным полем «Вес ед., кг» (base_weight) — так же это трактует
+ * lib/utils/shiftMetrics.ts, пересчитывая расход бабин в килограммы.
  */
-export const KG_SUBCATEGORIES: readonly string[] = ["Бабины", "Дастархан сырье"];
+export const KG_SUBCATEGORIES: readonly string[] = ["Дастархан сырье"];
 
 /**
  * Единица измерения по умолчанию. Правило: готовая продукция — «шт»,

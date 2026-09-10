@@ -20,6 +20,8 @@ from app.core.enums import ItemType, RevenueMode
 from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.report import (
+    BobbinRow,
+    BobbinShiftRow,
     DashboardResponse,
     DebtsResponse,
     ExpenseByCategoryRow,
@@ -114,6 +116,31 @@ async def get_production(
     date_to: DateTo = None,
 ) -> list[ProductionRow]:
     return await report_service.production(db, date_from=date_from, date_to=date_to)
+
+
+@router.get("/bobbins", response_model=list[BobbinRow])
+async def get_bobbins(
+    actor: ProductionViewer,
+    db: DbSession,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> list[BobbinRow]:
+    """Бабины за период: взято, ожидалось по норме, выпущено рулонов."""
+    return await report_service.bobbins(db, date_from=date_from, date_to=date_to)
+
+
+@router.get("/bobbins/{bobbin_id}/shifts", response_model=list[BobbinShiftRow])
+async def get_bobbin_shifts(
+    bobbin_id: uuid.UUID,
+    actor: ProductionViewer,
+    db: DbSession,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> list[BobbinShiftRow]:
+    """Движение одной бабины по сменам за тот же период (детализация строки)."""
+    return await report_service.bobbin_shifts(
+        db, bobbin_id, date_from=date_from, date_to=date_to
+    )
 
 
 @router.get("/sales-by-product", response_model=list[SalesByProductRow])

@@ -1,6 +1,8 @@
 import { http } from "@/lib/api/http";
 import type { ItemType, RevenueMode } from "@/lib/types/enums";
 import type {
+  BobbinRow,
+  BobbinShiftRow,
   DashboardResponse,
   DebtsResponse,
   ExpenseByCategoryRow,
@@ -36,6 +38,12 @@ export const getExpensesByCategory = (params: PeriodParams = {}) =>
 
 export const getRevenueExpenseTrend = (params: RevenueModeParams = {}) =>
   http.get<RevenueExpenseTrendPoint[]>("/reports/revenue-expense-trend", { params });
+
+export const getBobbins = (params: PeriodParams = {}) =>
+  http.get<BobbinRow[]>("/reports/bobbins", { params });
+
+export const getBobbinShifts = (bobbinId: string, params: PeriodParams = {}) =>
+  http.get<BobbinShiftRow[]>(`/reports/bobbins/${bobbinId}/shifts`, { params });
 
 export const getProduction = (params: PeriodParams = {}) =>
   http.get<ProductionRow[]>("/reports/production", { params });

@@ -18,6 +18,9 @@ class ProductCreate(BaseModel):
     base_weight: Decimal | None = Field(default=None, ge=0)
     min_stock: Decimal = Field(default=Decimal("0"), ge=0)
     is_active: bool = True
+    # Только для бабин (подкатегория «Бабины»), меняется по праву products.set_norm.
+    roll_norm: int | None = Field(default=None, gt=0)
+    roll_product_id: uuid.UUID | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -30,6 +33,8 @@ class ProductUpdate(BaseModel):
     base_weight: Decimal | None = Field(default=None, ge=0)
     min_stock: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
+    roll_norm: int | None = Field(default=None, gt=0)
+    roll_product_id: uuid.UUID | None = None
 
 
 class ProductRead(BaseModel):
@@ -45,6 +50,8 @@ class ProductRead(BaseModel):
     base_weight: Decimal | None
     min_stock: Decimal
     is_active: bool
+    roll_norm: int | None = None
+    roll_product_id: uuid.UUID | None = None
     created_at: datetime
 
 
@@ -67,6 +74,11 @@ class CatalogItem(BaseModel):
     min_stock: Decimal
     quantity: Decimal
     is_active: bool
+    # Норма выхода рулонов с бабины и наименование продукции, которое из неё крутят
+    # (только у позиций подкатегории «Бабины»; у остальных — None).
+    roll_norm: int | None = None
+    roll_product_id: uuid.UUID | None = None
+    roll_product_name: str | None = None
     # Кто и когда завёл позицию. Приходит только пользователям с правом
     # «журнал аудита» (см. routes/products.get_catalog); у остальных — None.
     # У позиций, заведённых до появления колонки created_by, автор неизвестен.

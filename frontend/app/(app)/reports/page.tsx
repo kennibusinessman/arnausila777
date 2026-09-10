@@ -19,6 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { hasPermission } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
@@ -28,6 +29,8 @@ import {
   useDebts,
   usePeriodSummary,
   usePnLReport,
+  useBobbinShifts,
+  useBobbinsReport,
   useProductionReport,
   useSalesByProduct,
   useStockMovement,
@@ -35,7 +38,7 @@ import {
 } from "@/lib/hooks/useReports";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
 import { ItemType, PaymentMethod, Permission, RevenueMode, ShiftReportStatus, ShiftType } from "@/lib/types/enums";
-import type { PeriodCategoryBlock, PeriodItemRow, PeriodTotals } from "@/lib/types/report";
+import type { BobbinRow, PeriodCategoryBlock, PeriodItemRow, PeriodTotals } from "@/lib/types/report";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -68,6 +71,7 @@ type ReportId =
   | "payments"
   | "shifts"
   | "production"
+  | "bobbins"
   | "stock";
 const REPORT_LABEL: Record<ReportId, string> = {
   period: "За период",
@@ -79,6 +83,7 @@ const REPORT_LABEL: Record<ReportId, string> = {
   payments: "Платежи",
   shifts: "Смены",
   production: "Производство",
+  bobbins: "Бабины",
   stock: "Остатки",
 };
 
@@ -138,6 +143,7 @@ const REPORT_PERMISSION: Record<ReportId, Permission> = {
   payments: Permission.PAYMENTS_VIEW,
   shifts: Permission.SHIFT_REPORTS_VIEW_ALL,
   production: Permission.REPORTS_PRODUCTION,
+  bobbins: Permission.REPORTS_PRODUCTION,
   stock: Permission.REPORTS_STOCK,
 };
 
@@ -151,6 +157,7 @@ const REPORT_ORDER: ReportId[] = [
   "payments",
   "shifts",
   "production",
+  "bobbins",
   "stock",
 ];
 
@@ -298,6 +305,7 @@ export default function ReportsPage() {
       {report === "payments" && <PaymentsReport filters={filters} periodLabel={periodLabel} />}
       {report === "shifts" && <ShiftsReport filters={filters} periodLabel={periodLabel} />}
       {report === "production" && <ProductionReport filters={filters} periodLabel={periodLabel} />}
+      {report === "bobbins" && <BobbinsReport filters={filters} periodLabel={periodLabel} />}
       {report === "stock" && <StockReport periodLabel={periodLabel} />}
     </div>
   );
@@ -454,12 +462,15 @@ function TableCard({
   rows,
   empty,
   minWidth,
+  onRowClick,
 }: {
   title: string;
   grid: string;
   headers: TableHeader[];
   rows: { key: string; cells: Cell[] }[];
   empty: string;
+  /** Клик по строке (открыть детализацию). Без него строки некликабельны. */
+  onRowClick?: (key: string) => void;
   /** Минимальная ширина таблицы (для широких отчётов): вместо сжатия колонок
    *  на узких экранах включается горизонтальный скролл. По умолчанию — 680px
    *  до lg, а на lg+ таблица подстраивается под ширину карточки. */
@@ -500,7 +511,11 @@ function TableCard({
           rows.map((r) => (
             <div
               key={r.key}
-              className="grid items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-white/50"
+              onClick={onRowClick ? () => onRowClick(r.key) : undefined}
+              className={clsx(
+                "grid items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-white/50",
+                onRowClick && "cursor-pointer"
+              )}
               style={{ gridTemplateColumns: grid }}
             >
               {r.cells.map((c, i) => (
@@ -530,7 +545,14 @@ function TableCard({
           <div className="py-10 text-center text-[13px] text-muted">{empty}</div>
         ) : (
           rows.map((r) => (
-            <div key={r.key} className="rounded-2xl border border-white/60 bg-white/45 p-3.5">
+            <div
+              key={r.key}
+              onClick={onRowClick ? () => onRowClick(r.key) : undefined}
+              className={clsx(
+                "rounded-2xl border border-white/60 bg-white/45 p-3.5",
+                onRowClick && "cursor-pointer active:scale-[0.99]"
+              )}
+            >
               <div
                 className={clsx("mb-2 truncate text-[14px] font-semibold text-text", r.cells[0]?.className)}
                 style={r.cells[0]?.style}
@@ -1095,6 +1117,231 @@ interface AggStock {
   sku: string | null;
   unit: string;
   quantity: number;
+}
+
+/** Цвет отклонения от нормы: недобор — жёлтый/красный, перевыполнение — зелёный. */
+function diffColor(pctDiff: number | null): string | undefined {
+  if (pctDiff === null) return undefined;
+  if (pctDiff >= 0) return "#178a55";
+  return pctDiff >= -10 ? "#c47d1f" : "#bd4836";
+}
+
+/** Процент выполнения нормы: факт ÷ ожидание. null — нормы или привязки нет. */
+function normPct(row: { expected_rolls: string | null; produced_rolls: string }): number | null {
+  const expected = Number(row.expected_rolls ?? 0);
+  if (!row.expected_rolls || expected <= 0) return null;
+  return (Number(row.produced_rolls) / expected) * 100;
+}
+
+const BOBBIN_SHIFT_GRID = "110px 100px minmax(0,1fr) 120px 100px";
+
+function BobbinsReport({ filters, periodLabel }: { filters: FilterState; periodLabel: string }) {
+  const params = { date_from: filters.from || undefined, date_to: filters.to || undefined };
+  const { data, isLoading } = useBobbinsReport(params);
+  const [selected, setSelected] = useState<BobbinRow | null>(null);
+
+  const rows = useMemo(() => data ?? [], [data]);
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (a, r) => {
+          a.taken += Number(r.taken);
+          a.produced += Number(r.produced_rolls);
+          // В выполнение нормы берём только бабины, у которых норма задана.
+          if (r.expected_rolls) {
+            a.expected += Number(r.expected_rolls);
+            a.producedWithNorm += Number(r.produced_rolls);
+          }
+          return a;
+        },
+        { taken: 0, produced: 0, expected: 0, producedWithNorm: 0 }
+      ),
+    [rows]
+  );
+  if (isLoading) return <Loading />;
+
+  const totalPct = totals.expected > 0 ? (totals.producedWithNorm / totals.expected) * 100 : null;
+  const kpis: Kpi[] = [
+    { label: "Взято бабин", value: fmtNum(totals.taken), icon: Boxes, iconColor: "#f0a23c", iconBg: "rgba(240,162,60,0.14)" },
+    { label: "Ожидалось рулонов", value: totals.expected > 0 ? fmtNum(totals.expected) : "—", icon: Package, iconColor: "#3b82f6", iconBg: "rgba(59,130,246,0.14)" },
+    { label: "Выпущено рулонов", value: fmtNum(totals.produced), icon: Package, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
+    {
+      label: "Выполнение нормы",
+      value: totalPct === null ? "—" : `${totalPct.toFixed(1)}%`,
+      valueColor: diffColor(totalPct === null ? null : totalPct - 100),
+      icon: TrendingUp,
+      iconColor: "#8b5cf6",
+      iconBg: "rgba(139,92,246,0.14)",
+    },
+  ];
+
+  const bars: Bar[] = rows.slice(0, 6).map((r) => ({
+    label: r.bobbin_name.split(" ")[0] ?? r.bobbin_name,
+    value: Number(r.produced_rolls),
+    valueLabel: `${fmtNum(Number(r.produced_rolls))} рул.`,
+  }));
+
+  const grid = "minmax(0,1.3fr) minmax(0,1.1fr) 90px 100px 120px 110px 150px";
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <KpiStrip items={kpis} />
+      <ChartsRow>
+        <BarCard title="Выпуск рулонов по бабинам" periodLabel={periodLabel} bars={bars} />
+        <DonutCard
+          title="Доли выпуска"
+          center={fmtNum(totals.produced)}
+          centerLabel="рулонов"
+          segments={topWithRest(
+            rows.map((r) => ({ name: r.bobbin_name, value: Number(r.produced_rolls) })),
+            5
+          )}
+        />
+      </ChartsRow>
+      <TableCard
+        title="Бабины за период"
+        grid={grid}
+        minWidth="1080px"
+        headers={[
+          { text: "Бабина" },
+          { text: "Наименование продукции" },
+          { text: "Норма", align: "right" },
+          { text: "Взято", align: "right" },
+          { text: "Ожидалось", align: "right" },
+          { text: "Факт", align: "right" },
+          { text: "Отклонение", align: "right" },
+        ]}
+        empty="За период бабины не брали"
+        onRowClick={(key) => setSelected(rows.find((r) => r.bobbin_id === key) ?? null)}
+        rows={rows.map((r) => {
+          const pct = normPct(r);
+          const color = diffColor(pct === null ? null : pct - 100);
+          return {
+            key: r.bobbin_id,
+            cells: [
+              { node: r.bobbin_name, className: "font-semibold" },
+              {
+                node: r.roll_product_name ?? "Без привязки",
+                className: r.roll_product_name ? "text-text" : "text-muted",
+              },
+              { node: r.roll_norm ?? "—", align: "right" as const, className: "tabular-nums" },
+              { node: fmtNum(Number(r.taken)), align: "right" as const, className: "font-semibold tabular-nums" },
+              {
+                node: r.expected_rolls ? fmtNum(Number(r.expected_rolls)) : "—",
+                align: "right" as const,
+                className: "tabular-nums text-muted",
+              },
+              { node: fmtNum(Number(r.produced_rolls)), align: "right" as const, className: "font-bold tabular-nums" },
+              {
+                node:
+                  r.diff_units === null || pct === null
+                    ? "—"
+                    : `${Number(r.diff_units) > 0 ? "+" : ""}${fmtNum(Number(r.diff_units))} шт · ${pct.toFixed(0)}%`,
+                align: "right" as const,
+                className: "font-semibold tabular-nums",
+                style: { color },
+              },
+            ],
+          };
+        })}
+      />
+      <BobbinDetailModal row={selected} params={params} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
+/** Движение одной бабины по сменам за тот же период (детализация строки отчёта). */
+function BobbinDetailModal({
+  row,
+  params,
+  onClose,
+}: {
+  row: BobbinRow | null;
+  params: { date_from?: string; date_to?: string };
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useBobbinShifts(row?.bobbin_id ?? null, params);
+  if (!row) return null;
+  const shifts = data ?? [];
+  const takenTotal = shifts.reduce((s, r) => s + Number(r.taken), 0);
+  const producedTotal = shifts.reduce((s, r) => s + Number(r.produced_rolls), 0);
+  const pct = normPct(row);
+  const color = diffColor(pct === null ? null : pct - 100);
+  const header: { label: string; value: string; color?: string }[] = [
+    { label: "Наименование", value: row.roll_product_name ?? "—" },
+    { label: "Норма с бабины", value: row.roll_norm != null ? `${row.roll_norm} рул.` : "—" },
+    { label: "Взято · факт", value: `${fmtNum(Number(row.taken))} · ${fmtNum(Number(row.produced_rolls))}` },
+    { label: "Выполнение нормы", value: pct === null ? "—" : `${pct.toFixed(0)}%`, color },
+  ];
+
+  return (
+    <Modal open title={row.bobbin_name} size="lg" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {header.map((f) => (
+            <div key={f.label} className="rounded-2xl border border-white/60 bg-white/45 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{f.label}</div>
+              <div
+                className="mt-0.5 truncate text-[13.5px] font-semibold text-text"
+                style={f.color ? { color: f.color } : undefined}
+              >
+                {f.value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {isLoading ? (
+          <Loading />
+        ) : shifts.length === 0 ? (
+          <p className="py-8 text-center text-[13px] text-muted">За период движения нет</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[560px]">
+              <div
+                className="grid gap-3 border-b border-border px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted"
+                style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
+              >
+                <span>Дата</span>
+                <span>Смена</span>
+                <span>Ответственный</span>
+                <span className="text-right">Взято бабин</span>
+                <span className="text-right">Рулонов</span>
+              </div>
+              {shifts.map((sh) => (
+                <div
+                  key={sh.shift_report_id}
+                  className="grid gap-3 px-2 py-2.5 text-[13px] text-text"
+                  style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
+                >
+                  <span className="tabular-nums">{formatDate(sh.shift_date)}</span>
+                  <span>{SHIFT_TYPE_LABEL[sh.shift_type]}</span>
+                  <span className="truncate">{sh.master_name ?? "—"}</span>
+                  <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.taken))}</span>
+                  <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.produced_rolls))}</span>
+                </div>
+              ))}
+              <div
+                className="mt-1 grid gap-3 border-t border-border px-2 pt-2.5 text-[13px] font-bold text-text"
+                style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
+              >
+                <span className="col-span-3">Итого · смен: {shifts.length}</span>
+                <span className="text-right tabular-nums">{fmtNum(takenTotal)}</span>
+                <span className="text-right tabular-nums">{fmtNum(producedTotal)}</span>
+              </div>
+              <p className="px-2 pt-2 text-[11.5px] text-muted">
+                {row.expected_rolls
+                  ? `Ожидалось ${fmtNum(Number(row.expected_rolls))} рулонов, отклонение по итогу периода ${
+                      Number(row.diff_units) > 0 ? "+" : ""
+                    }${fmtNum(Number(row.diff_units))} шт.`
+                  : "Норма или привязка к наименованию не задана — отклонение не считается."}{" "}
+                Внутри смены расход и выпуск сходиться не обязаны: бабина могла перейти на следующую смену.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
 }
 
 function StockReport({ periodLabel }: { periodLabel: string }) {

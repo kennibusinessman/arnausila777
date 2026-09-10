@@ -47,6 +47,7 @@ export const Permission = {
   PRODUCTS_CREATE: "products.create",
   PRODUCTS_EDIT: "products.edit",
   PRODUCTS_DELETE: "products.delete",
+  PRODUCTS_SET_NORM: "products.set_norm",
   MATERIALS_VIEW: "materials.view",
   MATERIALS_MANAGE: "materials.manage",
   MATERIALS_DELETE: "materials.delete",
