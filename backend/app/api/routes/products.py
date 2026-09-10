@@ -60,13 +60,28 @@ async def list_products(
 @router.get("/catalog", response_model=CatalogResponse)
 async def get_catalog(actor: Reader, db: DbSession) -> CatalogResponse:
     """Единый каталог: продукция + сырьё с остатками (для страницы «Товары»)."""
-    return await report_service.catalog(db)
+    data = await report_service.catalog(db)
+    # Кто и когда завёл позицию — административная информация: отдаём только тем,
+    # кому доступен журнал аудита (защита на уровне API, не только в UI).
+    if not actor.has_permission(Permission.AUDIT_VIEW):
+        for item in data.items:
+            item.created_by_name = None
+            item.created_at = None
+    return data
 
 
 @router.post("", response_model=ProductRead, status_code=201)
 async def create_product(data: ProductCreate, actor: Creator, db: DbSession) -> ProductRead:
     try:
-        obj = await repo.create(db, data.model_dump())
+        obj = await repo.create(db, {**data.model_dump(), "created_by": actor.id})
+        await audit_service.log(
+            db,
+            user_id=actor.id,
+            action="CREATE_PRODUCT",
+            entity_type="Product",
+            entity_id=obj.id,
+            new={"name": obj.name, "sku": obj.sku, "category": obj.category},
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()

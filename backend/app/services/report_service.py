@@ -299,6 +299,20 @@ async def catalog(session: AsyncSession) -> CatalogResponse:
         ).all()
     )
 
+    # ФИО авторов позиций одним запросом (у старых позиций created_by пуст).
+    author_ids = {
+        row.created_by for row in (*products, *materials) if row.created_by is not None
+    }
+    authors: dict[uuid.UUID, str] = {}
+    if author_ids:
+        authors = dict(
+            (
+                await session.execute(
+                    select(User.id, User.full_name).where(User.id.in_(author_ids))
+                )
+            ).all()
+        )
+
     items: list[CatalogItem] = []
     for p in products:
         items.append(
@@ -315,6 +329,8 @@ async def catalog(session: AsyncSession) -> CatalogResponse:
                 min_stock=p.min_stock,
                 quantity=Decimal(prod_qty.get(p.id, 0)),
                 is_active=p.is_active,
+                created_by_name=authors.get(p.created_by) if p.created_by else None,
+                created_at=p.created_at,
             )
         )
     for m in materials:
@@ -332,6 +348,8 @@ async def catalog(session: AsyncSession) -> CatalogResponse:
                 min_stock=m.min_stock,
                 quantity=Decimal(mat_qty.get(m.id, 0)),
                 is_active=m.is_active,
+                created_by_name=authors.get(m.created_by) if m.created_by else None,
+                created_at=m.created_at,
             )
         )
     return CatalogResponse(items=items)

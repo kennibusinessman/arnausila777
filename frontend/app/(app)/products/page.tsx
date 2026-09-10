@@ -27,7 +27,7 @@ import { useCatalog, useCreateProduct, useDeleteProduct, useUpdateProduct } from
 import { apiErrorMessage } from "@/lib/api/http";
 import { Permission } from "@/lib/types/enums";
 import type { CatalogItem } from "@/lib/types/product";
-import { formatCompactCurrency, formatCurrency, formatNumber } from "@/lib/utils/format";
+import { formatCompactCurrency, formatCurrency, formatDateTime, formatNumber } from "@/lib/utils/format";
 import { PRODUCT_CATEGORIES, SPUNBOND_SUBCATEGORIES, defaultUnit } from "@/lib/utils/productCategories";
 
 const MATERIAL = "__material__";
@@ -81,6 +81,9 @@ export default function ProductsPage() {
     item.kind === "material" ? canManageMaterial : canEditProduct;
   const canDeleteItem = (item: CatalogItem) =>
     item.kind === "material" ? canDeleteMaterial : canDeleteProduct;
+  // Кто завёл позицию — административная информация: показываем тем же, кому
+  // доступен журнал аудита (SA и руководитель). Бэкенд остальным её не отдаёт.
+  const canSeeAuthor = useCan(Permission.AUDIT_VIEW);
 
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("all"); // all | product | material | cat:<name>
@@ -142,7 +145,9 @@ export default function ProductsPage() {
   ];
 
   const hasFilter = !!(search || cat !== "all" || stock !== "all");
-  const gridCols = "minmax(0,1.6fr) 160px 70px 120px 132px 130px 84px";
+  const gridCols = canSeeAuthor
+    ? "minmax(0,1.6fr) 160px 70px 120px 132px 130px 170px 84px"
+    : "minmax(0,1.6fr) 160px 70px 120px 132px 130px 84px";
 
   function openCreate() {
     setEditing(null);
@@ -270,7 +275,14 @@ export default function ProductsPage() {
 
         {/* Десктоп (lg+) — таблица с горизонтальным скроллом */}
         <div className="hidden min-h-0 flex-1 overflow-x-auto lg:block">
-          <div className="flex h-full min-w-[880px] flex-col lg:min-w-0">
+          <div
+            className={clsx(
+              "flex h-full min-w-[880px] flex-col",
+              // С колонкой автора таблица шире экрана ноутбука — пусть лучше
+              // прокручивается по горизонтали, чем сжимает остальные колонки.
+              canSeeAuthor ? "lg:min-w-[1080px] xl:min-w-0" : "lg:min-w-0"
+            )}
+          >
         {/* column header */}
         <div className="grid gap-3 border-b border-border px-3 pb-2.5" style={{ gridTemplateColumns: gridCols }}>
           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Товар</span>
@@ -279,6 +291,11 @@ export default function ProductsPage() {
           <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Количество</span>
           <span className="text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Цена</span>
           <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">Статус</span>
+          {canSeeAuthor && (
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted">
+              Кто создал
+            </span>
+          )}
           <span />
         </div>
 
@@ -348,6 +365,16 @@ export default function ProductsPage() {
                   >
                     {sm.label}
                   </span>
+                  {canSeeAuthor && (
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-[12.5px] text-text/80">
+                        {it.created_by_name ?? "—"}
+                      </span>
+                      <span className="truncate text-[11px] text-muted">
+                        {it.created_at ? formatDateTime(it.created_at) : "—"}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-end gap-1">
                     {canEditItem(it) && (
                       <button
@@ -443,6 +470,15 @@ export default function ProductsPage() {
                   : [{ label: "Цена", value: formatCurrency(selected.price) }]),
                 { label: "Мин. остаток", value: qtyLabel(Number(selected.min_stock)) },
                 { label: "Статус", value: STATUS_META[stockStatus(Number(selected.quantity), Number(selected.min_stock))].label },
+                ...(canSeeAuthor
+                  ? [
+                      { label: "Кто создал", value: selected.created_by_name ?? "—" },
+                      {
+                        label: "Когда создан",
+                        value: selected.created_at ? formatDateTime(selected.created_at) : "—",
+                      },
+                    ]
+                  : []),
               ]
             : []
         }

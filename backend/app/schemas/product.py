@@ -67,6 +67,11 @@ class CatalogItem(BaseModel):
     min_stock: Decimal
     quantity: Decimal
     is_active: bool
+    # Кто и когда завёл позицию. Приходит только пользователям с правом
+    # «журнал аудита» (см. routes/products.get_catalog); у остальных — None.
+    # У позиций, заведённых до появления колонки created_by, автор неизвестен.
+    created_by_name: str | None = None
+    created_at: datetime | None = None
 
 
 class CatalogResponse(BaseModel):

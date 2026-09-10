@@ -49,7 +49,9 @@ export const ACTION_LABELS: Record<string, string> = {
   MANUAL_STOCK_ADJUSTMENT: "Корректировка остатка на складе",
   DELETE_STOCK_MOVEMENT: "Удаление складского движения",
 
+  CREATE_PRODUCT: "Создание товара",
   DELETE_PRODUCT: "Удаление товара",
+  CREATE_MATERIAL: "Создание сырья",
   DELETE_MATERIAL: "Удаление сырья",
 
   CREATE_USER: "Создание пользователя",

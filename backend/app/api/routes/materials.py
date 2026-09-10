@@ -56,7 +56,15 @@ async def list_materials(
 @router.post("", response_model=MaterialRead, status_code=201)
 async def create_material(data: MaterialCreate, actor: Writer, db: DbSession) -> MaterialRead:
     try:
-        obj = await repo.create(db, data.model_dump())
+        obj = await repo.create(db, {**data.model_dump(), "created_by": actor.id})
+        await audit_service.log(
+            db,
+            user_id=actor.id,
+            action="CREATE_MATERIAL",
+            entity_type="Material",
+            entity_id=obj.id,
+            new={"name": obj.name, "sku": obj.sku, "category": obj.category},
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()

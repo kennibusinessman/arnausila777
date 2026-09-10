@@ -54,6 +54,10 @@ export interface CatalogItem {
   min_stock: string;
   quantity: string;
   is_active: boolean;
+  /** Кто и когда завёл позицию. Приходит только с правом «журнал аудита»;
+   *  у позиций, заведённых до появления этой колонки, автор неизвестен (null). */
+  created_by_name: string | null;
+  created_at: string | null;
 }
 
 export interface CatalogResponse {

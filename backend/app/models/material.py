@@ -1,9 +1,10 @@
 """Сырьё и расходники."""
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, String, text
+from sqlalchemy import Boolean, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import QUANTITY, Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
@@ -19,3 +20,5 @@ class Material(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     # Порог низкого остатка: если остаток ≤ min_stock (и min_stock > 0) — статус «Заканчивается».
     min_stock: Mapped[Decimal] = mapped_column(QUANTITY, default=0, server_default=text("0"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    # Кто завёл позицию (см. Product.created_by). NULL — заведено до появления колонки.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
