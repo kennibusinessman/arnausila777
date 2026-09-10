@@ -1217,7 +1217,20 @@ function BobbinsReport({ filters, periodLabel }: { filters: FilterState; periodL
             cells: [
               { node: r.bobbin_name, className: "font-semibold" },
               {
-                node: r.roll_product_name ?? "Без привязки",
+                node:
+                  r.shared_with > 1 ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate">{r.roll_product_name}</span>
+                      <span
+                        title={`Это наименование крутят с ${r.shared_with} бабин — выпуск разделён между ними пропорционально ожиданию по норме`}
+                        className="shrink-0 rounded border border-white/70 bg-white/60 px-1.5 py-px text-[10.5px] font-semibold text-muted"
+                      >
+                        ÷{r.shared_with}
+                      </span>
+                    </span>
+                  ) : (
+                    r.roll_product_name ?? "Без привязки"
+                  ),
                 className: r.roll_product_name ? "text-text" : "text-muted",
               },
               { node: r.roll_norm ?? "—", align: "right" as const, className: "tabular-nums" },
@@ -1344,6 +1357,8 @@ function BobbinDetailModal({
                       Number(row.diff_units) > 0 ? "+" : ""
                     }${fmtNum(Number(row.diff_units))} шт.`
                   : "Норма или привязка к наименованию не задана — отклонение не считается."}{" "}
+                {row.shared_with > 1 &&
+                  `Это наименование крутят с ${row.shared_with} бабин: выпуск смены делится между теми, которые в неё брали. `}
                 Внутри смены расход и выпуск сходиться не обязаны: бабина могла перейти на следующую смену.
                 {canOpenShift && " Клик по строке открывает сменный отчёт."}
               </p>

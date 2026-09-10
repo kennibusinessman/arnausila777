@@ -205,18 +205,54 @@ async def test_norm_only_for_bobbins(client, admin_headers):
     assert r.status_code == 400, r.text
 
 
-async def test_one_product_belongs_to_one_bobbin(client, admin_headers):
-    """Одно наименование — одна бабина, иначе выпуск задвоился бы в отчёте."""
+async def test_product_can_be_shared_by_several_bobbins(client, admin_headers):
+    """Одно наименование крутят с двух бабин: выпуск делится, итог не задваивается.
+
+    Смена 1 берёт бабину А и даёт 12 рулонов, смена 2 берёт бабину Б и даёт 18.
+    Выпуск наименования внутри смены достаётся тем бабинам, которые в эту смену
+    брали, поэтому 12 уходят А, 18 — Б, а сумма по строкам равна выпуску за период.
+    """
+    fin = await create_warehouse(client, admin_headers, "FINISHED_GOODS")
     roll = await _create_roll(client, admin_headers)
-    first = (await _create_bobbin(client, admin_headers, norm=10, roll_id=roll["id"])).json()
-    assert first["roll_product_id"] == roll["id"]
+    a = (await _create_bobbin(client, admin_headers, norm=10, roll_id=roll["id"])).json()
+    r = await _create_bobbin(client, admin_headers, norm=5, roll_id=roll["id"])
+    assert r.status_code == 201, r.text
+    b = r.json()
+    assert b["roll_product_id"] == roll["id"]
 
-    r = await _create_bobbin(client, admin_headers, norm=8, roll_id=roll["id"])
-    assert r.status_code == 409, r.text
-    assert "уже привязано" in r.json()["detail"]
+    for bobbin in (a, b):
+        await adjust_stock(
+            client, admin_headers, warehouse_id=fin["id"], item_type="PRODUCT",
+            item_id=bobbin["id"], quantity=10, unit="шт",
+        )
 
-    # Перепривязать на ту же бабину повторно можно — конфликта с самой собой нет.
-    r = await client.patch(
-        f"/products/{first['id']}", json={"roll_product_id": roll["id"]}, headers=admin_headers
+    first = await _shift(
+        client, admin_headers, shift_type="SHIFT_1",
+        materials=[{"product_id": a["id"], "quantity_used": 2}],
+        outputs=[{"product_id": roll["id"], "quantity": 12}],
     )
-    assert r.status_code == 200, r.text
+    await _approve(client, admin_headers, first["id"], fin["id"])
+    second = await _shift(
+        client, admin_headers, shift_type="SHIFT_2",
+        materials=[{"product_id": b["id"], "quantity_used": 2}],
+        outputs=[{"product_id": roll["id"], "quantity": 18}],
+    )
+    await _approve(client, admin_headers, second["id"], fin["id"])
+
+    r = await client.get("/reports/bobbins", params=PERIOD, headers=admin_headers)
+    rows = {x["bobbin_id"]: x for x in r.json()}
+    assert float(rows[a["id"]]["produced_rolls"]) == 12
+    assert float(rows[b["id"]]["produced_rolls"]) == 18
+    assert rows[a["id"]]["shared_with"] == 2
+    assert rows[b["id"]]["shared_with"] == 2
+    # Итог по строкам равен выпуску за период — задвоения нет.
+    assert float(rows[a["id"]]["produced_rolls"]) + float(rows[b["id"]]["produced_rolls"]) == 30
+
+    # В детализации бабины А только та смена, в которую её брали.
+    r = await client.get(
+        f"/reports/bobbins/{a['id']}/shifts", params=PERIOD, headers=admin_headers
+    )
+    detail = r.json()
+    assert len(detail) == 1
+    assert detail[0]["shift_type"] == "SHIFT_1"
+    assert float(detail[0]["produced_rolls"]) == 12

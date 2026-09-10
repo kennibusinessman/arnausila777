@@ -48,8 +48,9 @@ async def _check_norm_fields(
     """Проверки для нормы выхода бабин (payload — только переданные поля).
 
     Норму и привязку меняет отдельное право (по умолчанию только супер-админ),
-    поля осмысленны лишь у бабин, а одно наименование продукции привязано ровно
-    к одной бабине — иначе её выпуск попал бы в две строки отчёта и итог задвоился.
+    и поля осмысленны лишь у бабин. Одно наименование можно привязать к
+    нескольким бабинам — его выпуск в отчёте делится между ними пропорционально
+    ожиданию по норме (см. report_service._split_shares).
     """
     # Важно: присутствие ключа = осознанная правка, даже если значение None
     # (сброс нормы — тоже правка). Поэтому на вход идёт model_dump(exclude_unset=True),
@@ -76,18 +77,6 @@ async def _check_norm_fields(
         raise BadRequestError("Наименование продукции не найдено")
     if not target.is_active:
         raise BadRequestError(f"Товар «{target.name}» неактивен")
-    conditions = [
-        Product.roll_product_id == roll_product_id,
-        Product.deleted_at.is_(None),
-    ]
-    if product_id is not None:
-        conditions.append(Product.id != product_id)
-    taken = (await db.execute(select(Product.name).where(*conditions))).scalars().first()
-    if taken is not None:
-        raise ConflictError(
-            f"Наименование «{target.name}» уже привязано к бабине «{taken}». "
-            "Одно наименование — одна бабина."
-        )
 
 
 @router.get("", response_model=Page[ProductRead])

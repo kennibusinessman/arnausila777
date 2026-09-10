@@ -97,6 +97,9 @@ class BobbinRow(BaseModel):
     expected_rolls: Decimal | None = None   # взято × норма
     produced_rolls: Decimal     # выпуск привязанного наименования за период
     diff_units: Decimal | None = None       # факт − ожидание
+    # Сколько бабин привязано к тому же наименованию (1 — только эта). Больше одной —
+    # выпуск разделён между ними пропорционально ожиданию, значит это оценка.
+    shared_with: int = 1
 
 
 class BobbinShiftRow(BaseModel):

@@ -63,6 +63,13 @@ function catMeta(item: CatalogItem) {
   return { label: item.category, ...(PRODUCT_PALETTE[h % PRODUCT_PALETTE.length] ?? PRODUCT_PALETTE[0]!) };
 }
 
+/** Бабина, у которой не заполнена норма выхода или привязка к наименованию:
+ *  отчёт по бабинам для неё ничего не посчитает. */
+function isUnsetBobbin(it: CatalogItem): boolean {
+  if (it.kind !== "product" || it.subcategory !== BOBBIN_SUBCATEGORY) return false;
+  return it.roll_norm == null || it.roll_product_id == null;
+}
+
 function stockStatus(qty: number, min: number): StockStatus {
   if (qty <= 0) return "out";
   if (min > 0 && qty <= min) return "low";
@@ -93,6 +100,10 @@ export default function ProductsPage() {
   // Подкатегория внутри выбранной категории («Спанбонд» → Спанбонд/Бабины/Дастархан сырьё).
   // "" — все подкатегории; сбрасывается при смене категории.
   const [subcat, setSubcat] = useState("");
+  // Быстрый фильтр для того, кто задаёт нормы: бабины, у которых норма или
+  // привязка к наименованию ещё не заполнена — то есть отчёт по ним не считается.
+  const [noNorm, setNoNorm] = useState(false);
+  const canSetNorm = useCan(Permission.PRODUCTS_SET_NORM);
   const [stock, setStock] = useState<"all" | "low" | "out">("all");
   const [sort, setSort] = useState<SortKey>("name");
   const [editing, setEditing] = useState<CatalogItem | null>(null);
@@ -103,7 +114,8 @@ export default function ProductsPage() {
   const deleteProduct = useDeleteProduct();
   const deleteMaterial = useDeleteMaterial();
 
-  const all = items ?? [];
+  // Стабильная ссылка: без useMemo каждый render давал бы новый массив и пересчитывал бы всё ниже.
+  const all = useMemo(() => items ?? [], [items]);
 
   const productCats = useMemo(() => {
     const set = new Set<string>();
@@ -144,6 +156,7 @@ export default function ProductsPage() {
       if (cat === "material" && it.kind !== "material") return false;
       if (cat.startsWith("cat:") && !(it.kind === "product" && it.category === cat.slice(4))) return false;
       if (subcat && it.subcategory !== subcat) return false;
+      if (noNorm && !isUnsetBobbin(it)) return false;
       const st = stockStatus(Number(it.quantity), Number(it.min_stock));
       if (stock === "low" && st !== "low") return false;
       if (stock === "out" && st !== "out") return false;
@@ -155,8 +168,9 @@ export default function ProductsPage() {
       if (sort === "price") return Number(b.price) - Number(a.price);
       return a.name.localeCompare(b.name, "ru");
     });
-  }, [all, cat, subcat, stock, search, sort]);
+  }, [all, cat, subcat, noNorm, stock, search, sort]);
 
+  const noNormCount = useMemo(() => all.filter(isUnsetBobbin).length, [all]);
   const lowCount = all.filter((it) => stockStatus(Number(it.quantity), Number(it.min_stock)) !== "ok").length;
   const totalUnits = all.reduce((s, it) => s + Number(it.quantity), 0);
   const totalValue = all.reduce((s, it) => s + Number(it.quantity) * Number(it.price), 0);
@@ -168,9 +182,9 @@ export default function ProductsPage() {
     { label: "Стоимость склада", value: formatCompactCurrency(totalValue), valueColor: "#178a55", icon: Coins, iconColor: "#1f9d63", iconBg: "rgba(31,157,99,0.14)" },
   ];
 
-  const hasFilter = !!(search || cat !== "all" || subcat || stock !== "all");
+  const hasFilter = !!(search || cat !== "all" || subcat || noNorm || stock !== "all");
   const gridCols = canSeeAuthor
-    ? "minmax(0,1.6fr) 160px 70px 120px 132px 130px 170px 84px"
+    ? "minmax(0,1.4fr) 140px 60px 110px 120px 124px 150px 76px"
     : "minmax(0,1.6fr) 160px 70px 120px 132px 130px 84px";
 
   function openCreate() {
@@ -260,12 +274,42 @@ export default function ProductsPage() {
           ))}
         </div>
 
+        {canSetNorm && (
+          <button
+            onClick={() => {
+              // Включаем «без нормы» и снимаем остальные фильтры, иначе выборка
+              // может оказаться пустой из-за выбранной категории или остатка.
+              const next = !noNorm;
+              setNoNorm(next);
+              if (next) {
+                setCat("all");
+                setSubcat("");
+                setStock("all");
+              }
+            }}
+            title="Бабины, у которых не заданы норма выхода или наименование продукции"
+            className={clsx(
+              "flex items-center gap-2 whitespace-nowrap rounded-xl border px-3.5 py-2 text-[12.5px] font-semibold transition-colors",
+              noNorm
+                ? "border-warning/50 bg-warning-bg text-warning"
+                : "border-white/70 bg-white/60 text-muted hover:bg-white/80"
+            )}
+          >
+            <AlertTriangle className="h-[15px] w-[15px]" strokeWidth={2} />
+            Бабины без нормы
+            <span className="rounded-full bg-white/70 px-1.5 py-px text-[11px] tabular-nums">
+              {noNormCount}
+            </span>
+          </button>
+        )}
+
         {hasFilter && (
           <button
             onClick={() => {
               setSearch("");
               setCat("all");
               setSubcat("");
+              setNoNorm(false);
               setStock("all");
             }}
             className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] font-medium text-danger transition-colors hover:bg-danger-bg"
@@ -327,7 +371,7 @@ export default function ProductsPage() {
               "flex h-full min-w-[880px] flex-col",
               // С колонкой автора таблица шире экрана ноутбука — пусть лучше
               // прокручивается по горизонтали, чем сжимает остальные колонки.
-              canSeeAuthor ? "lg:min-w-[1080px] xl:min-w-0" : "lg:min-w-0"
+              canSeeAuthor ? "lg:min-w-[1000px] xl:min-w-0" : "lg:min-w-0"
             )}
           >
         {/* column header */}
@@ -368,8 +412,10 @@ export default function ProductsPage() {
               return (
                 <div
                   key={`${it.kind}-${it.id}`}
+                  onClick={() => setSelected(it)}
+                  title="Открыть карточку позиции"
                   className={clsx(
-                    "grid items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-white/50",
+                    "grid cursor-pointer items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-white/50",
                     !it.is_active && "opacity-55"
                   )}
                   style={{ gridTemplateColumns: gridCols }}
@@ -414,8 +460,14 @@ export default function ProductsPage() {
                   </span>
                   {canSeeAuthor && (
                     <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-[12.5px] text-text/80">
-                        {it.created_by_name ?? "—"}
+                      <span
+                        className={clsx(
+                          "truncate text-[12.5px]",
+                          it.created_by_name ? "text-text/80" : "text-muted"
+                        )}
+                        title={it.created_by_name ?? "Позиция заведена до того, как система начала запоминать автора"}
+                      >
+                        {it.created_by_name ?? "неизвестно"}
                       </span>
                       <span className="truncate text-[11px] text-muted">
                         {it.created_at ? formatDateTime(it.created_at) : "—"}
@@ -425,7 +477,10 @@ export default function ProductsPage() {
                   <div className="flex items-center justify-end gap-1">
                     {canEditItem(it) && (
                       <button
-                        onClick={() => openEdit(it)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEdit(it);
+                        }}
                         title="Изменить"
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-white/70 hover:text-text"
                       >
@@ -434,7 +489,10 @@ export default function ProductsPage() {
                     )}
                     {canDeleteItem(it) && (
                       <button
-                        onClick={() => handleDelete(it)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(it);
+                        }}
                         title="Удалить"
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-danger transition-colors hover:bg-danger-bg"
                       >
@@ -528,7 +586,12 @@ export default function ProductsPage() {
                   : []),
                 ...(canSeeAuthor
                   ? [
-                      { label: "Кто создал", value: selected.created_by_name ?? "—" },
+                      {
+                        label: "Кто создал",
+                        value:
+                          selected.created_by_name ??
+                          "неизвестно (заведено до учёта автора)",
+                      },
                       {
                         label: "Когда создан",
                         value: selected.created_at ? formatDateTime(selected.created_at) : "—",

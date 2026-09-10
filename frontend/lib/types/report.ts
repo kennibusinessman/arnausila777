@@ -75,6 +75,9 @@ export interface BobbinRow {
   expected_rolls: string | null;
   produced_rolls: string;
   diff_units: string | null;
+  /** Сколько бабин привязано к тому же наименованию. Больше одной — выпуск
+   *  разделён между ними пропорционально ожиданию, то есть это оценка. */
+  shared_with: number;
 }
 
 /** Движение бабины в разрезе смен: строка на смену, где брали бабину
