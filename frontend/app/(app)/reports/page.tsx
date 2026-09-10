@@ -19,9 +19,10 @@ import {
   Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, useCan } from "@/lib/auth/permissions";
 import { useAuthStore } from "@/lib/auth/store";
 import { useDashboard, useRevenueExpenseTrend } from "@/lib/hooks/useDashboard";
 import { usePaymentsList, usePaymentsSummary } from "@/lib/hooks/usePayments";
@@ -37,7 +38,7 @@ import {
   useStockReport,
 } from "@/lib/hooks/useReports";
 import { useShiftReportsList } from "@/lib/hooks/useShiftReports";
-import { ItemType, PaymentMethod, Permission, RevenueMode, ShiftReportStatus, ShiftType } from "@/lib/types/enums";
+import { ItemType, PaymentMethod, Permission, RevenueMode, ShiftReportStatus } from "@/lib/types/enums";
 import type { BobbinRow, PeriodCategoryBlock, PeriodItemRow, PeriodTotals } from "@/lib/types/report";
 import {
   formatCompactCurrency,
@@ -47,6 +48,7 @@ import {
   formatNumber,
   formatWeight,
 } from "@/lib/utils/format";
+import { SHIFT_SHORT_LABELS } from "@/lib/utils/shiftLabels";
 import { shiftMetrics, weightKg } from "@/lib/utils/shiftMetrics";
 import { CATEGORY_COLOR, CATEGORY_SHORT } from "@/lib/utils/shiftRawRules";
 
@@ -92,11 +94,6 @@ const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   [PaymentMethod.BANK_TRANSFER]: "Перевод",
   [PaymentMethod.CARD]: "Карта",
   [PaymentMethod.OTHER]: "Другое",
-};
-
-const SHIFT_TYPE_LABEL: Record<ShiftType, string> = {
-  [ShiftType.SHIFT_1]: "Смена 1",
-  [ShiftType.SHIFT_2]: "Смена 2",
 };
 
 type Period = "" | "thisMonth" | "week" | "month" | "quarter" | "year";
@@ -1260,6 +1257,9 @@ function BobbinDetailModal({
   onClose: () => void;
 }) {
   const { data, isLoading } = useBobbinShifts(row?.bobbin_id ?? null, params);
+  const router = useRouter();
+  // Строка ведёт в сам сменный отчёт — но только если он пользователю доступен.
+  const canOpenShift = useCan(Permission.SHIFT_REPORTS_VIEW, Permission.SHIFT_REPORTS_VIEW_ALL);
   if (!row) return null;
   const shifts = data ?? [];
   const takenTotal = shifts.reduce((s, r) => s + Number(r.taken), 0);
@@ -1308,17 +1308,27 @@ function BobbinDetailModal({
                 <span className="text-right">Рулонов</span>
               </div>
               {shifts.map((sh) => (
-                <div
+                <button
                   key={sh.shift_report_id}
-                  className="grid gap-3 px-2 py-2.5 text-[13px] text-text"
+                  type="button"
+                  disabled={!canOpenShift}
+                  title={canOpenShift ? "Открыть сменный отчёт" : undefined}
+                  onClick={() => {
+                    onClose();
+                    router.push(`/shift-reports/${sh.shift_report_id}`);
+                  }}
+                  className={clsx(
+                    "grid w-full gap-3 rounded-lg px-2 py-2.5 text-left text-[13px] text-text transition-colors",
+                    canOpenShift && "cursor-pointer hover:bg-white/60"
+                  )}
                   style={{ gridTemplateColumns: BOBBIN_SHIFT_GRID }}
                 >
                   <span className="tabular-nums">{formatDate(sh.shift_date)}</span>
-                  <span>{SHIFT_TYPE_LABEL[sh.shift_type]}</span>
+                  <span>{SHIFT_SHORT_LABELS[sh.shift_type]}</span>
                   <span className="truncate">{sh.master_name ?? "—"}</span>
                   <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.taken))}</span>
                   <span className="text-right font-semibold tabular-nums">{fmtNum(Number(sh.produced_rolls))}</span>
-                </div>
+                </button>
               ))}
               <div
                 className="mt-1 grid gap-3 border-t border-border px-2 pt-2.5 text-[13px] font-bold text-text"
@@ -1335,6 +1345,7 @@ function BobbinDetailModal({
                     }${fmtNum(Number(row.diff_units))} шт.`
                   : "Норма или привязка к наименованию не задана — отклонение не считается."}{" "}
                 Внутри смены расход и выпуск сходиться не обязаны: бабина могла перейти на следующую смену.
+                {canOpenShift && " Клик по строке открывает сменный отчёт."}
               </p>
             </div>
           </div>
@@ -1673,7 +1684,7 @@ function ShiftsReport({ filters, periodLabel }: { filters: FilterState; periodLa
               cells: [
                 { node: formatDate(r.shift_date), className: "font-semibold" },
                 { node: r.master?.full_name ?? "—", className: "text-muted" },
-                { node: SHIFT_TYPE_LABEL[r.shift_type], align: "center", className: "text-muted" },
+                { node: SHIFT_SHORT_LABELS[r.shift_type], align: "center", className: "text-muted" },
                 { node: `${formatNumber(m.producedKg, 1)} кг`, align: "right", className: "font-bold tabular-nums" },
                 { node: `${formatNumber(m.rawKg, 1)} кг`, align: "right", className: "tabular-nums text-text/70" },
                 {
