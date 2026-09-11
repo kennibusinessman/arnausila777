@@ -32,6 +32,15 @@ export function formatPercent(value: number | null, fractionDigits = 0): string 
   }).format(value)} %`;
 }
 
+const quantityFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 });
+
+/** Количество на складе: до 3 знаков после запятой, без хвостовых нулей — "1 250", "12,5". */
+export function formatQuantity(value: string | number): string {
+  const num = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(num)) return "—";
+  return quantityFormat.format(num);
+}
+
 export function formatNumber(value: string | number, fractionDigits = 0): string {
   const num = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(num)) return "—";

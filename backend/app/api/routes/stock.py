@@ -31,6 +31,8 @@ from app.schemas.stock import (
     AdjustmentCreate,
     AdjustmentDirection,
     InventoryApply,
+    InventoryHistoryDetail,
+    InventoryHistoryRead,
     InventoryItemRead,
     InventoryResult,
     MovementSourceRef,
@@ -47,7 +49,7 @@ movements_repo = CRUDRepository(StockMovement)
 StockUser = Annotated[User, Depends(require_permissions(Permission.STOCK_VIEW))]
 Adjuster = Annotated[User, Depends(require_permissions(Permission.STOCK_ADJUST))]
 Remover = Annotated[User, Depends(require_permissions(Permission.STOCK_DELETE_MOVEMENT))]
-Inventory = Annotated[User, Depends(require_permissions(Permission.STOCK_INVENTORY))]
+InventoryUser = Annotated[User, Depends(require_permissions(Permission.STOCK_INVENTORY))]
 
 
 @router.get("/balances", response_model=Page[StockBalanceRead])
@@ -190,6 +192,8 @@ async def item_history(
         if mv.source_type is SourceType.SHIPMENT:
             order_id = order_by_shipment.get(mv.source_id)
             return MovementSourceRef(kind="order", id=order_id) if order_id else None
+        if mv.source_type is SourceType.INVENTORY:
+            return MovementSourceRef(kind="inventory", id=mv.source_id)
         return None  # MANUAL_ADJUSTMENT и прочее — без документа
 
     running = Decimal("0")
@@ -249,7 +253,7 @@ async def create_adjustment(
 
 
 @router.get("/inventory", response_model=list[InventoryItemRead])
-async def list_inventory(actor: Inventory, db: DbSession) -> list[InventoryItemRead]:
+async def list_inventory(actor: InventoryUser, db: DbSession) -> list[InventoryItemRead]:
     """Все товары и сырьё (включая нулевые) с суммарным остатком — таблица страницы
     «Инвентаризация»."""
     return await stock_service.inventory_items(db)
@@ -257,10 +261,29 @@ async def list_inventory(actor: Inventory, db: DbSession) -> list[InventoryItemR
 
 @router.post("/inventory", response_model=InventoryResult)
 async def apply_inventory(
-    data: InventoryApply, actor: Inventory, db: DbSession
+    data: InventoryApply, actor: InventoryUser, db: DbSession
 ) -> InventoryResult:
     """Фактические остатки → приход/расход на разницу, одной транзакцией."""
     return await stock_service.apply_inventory(db, actor.id, data)
+
+
+@router.get("/inventory/history", response_model=Page[InventoryHistoryRead])
+async def list_inventory_history(
+    actor: InventoryUser, db: DbSession, params: Pagination
+) -> Page[InventoryHistoryRead]:
+    """Проведённые инвентаризации, новые сверху."""
+    items, total = await stock_service.inventory_history(db, params)
+    return Page[InventoryHistoryRead](
+        items=items, total=total, page=params.page, size=params.size
+    )
+
+
+@router.get("/inventory/history/{inventory_id}", response_model=InventoryHistoryDetail)
+async def get_inventory_history(
+    inventory_id: uuid.UUID, actor: InventoryUser, db: DbSession
+) -> InventoryHistoryDetail:
+    """Результат одной инвентаризации: каждая позиция «было → стало»."""
+    return await stock_service.inventory_detail(db, inventory_id)
 
 
 @router.delete("/movements/{movement_id}", response_model=Message)

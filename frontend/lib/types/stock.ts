@@ -34,7 +34,7 @@ export interface StockMovementRead {
 
 /** Ссылка на документ-источник движения (для перехода из истории склада). */
 export interface MovementSourceRef {
-  kind: "order" | "shift_report" | "expense";
+  kind: "order" | "shift_report" | "expense" | "inventory";
   id: string;
 }
 
@@ -95,4 +95,23 @@ export interface InventoryChange {
 export interface InventoryResult {
   changes: InventoryChange[];
   movements_created: number;
+  /** Документ в «Истории»; null — менять было нечего, документ не создан. */
+  inventory_id: string | null;
+}
+
+/** Строка «Истории инвентаризаций». */
+export interface InventoryHistoryRead {
+  id: string;
+  created_at: string;
+  created_by: string;
+  created_by_name: string | null;
+  comment: string | null;
+  positions: number;
+  in_count: number;
+  out_count: number;
+}
+
+/** Результат одной инвентаризации: каждая изменённая позиция «было → стало». */
+export interface InventoryHistoryDetail extends InventoryHistoryRead {
+  lines: InventoryChange[];
 }

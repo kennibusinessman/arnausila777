@@ -22,4 +22,5 @@ export const sourceTypeLabels: Record<SourceType, string> = {
   [SourceType.SHIPMENT]: "Отгрузка",
   [SourceType.MANUAL_ADJUSTMENT]: "Ручная корректировка",
   [SourceType.RETURN]: "Возврат",
+  [SourceType.INVENTORY]: "Инвентаризация",
 };

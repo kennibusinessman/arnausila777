@@ -50,7 +50,7 @@ class StockMovementRead(BaseModel):
 
 class MovementSourceRef(BaseModel):
     """Ссылка на документ-источник движения для перехода из истории склада.
-    kind — какая это страница (order/shift_report/expense), id — её идентификатор.
+    kind — какая это страница (order/shift_report/expense/inventory), id — её идентификатор.
     Для отгрузок (SHIPMENT) kind=order и id — заказ, к которому относится отгрузка."""
 
     kind: str
@@ -129,7 +129,28 @@ class InventoryChange(BaseModel):
 
 class InventoryResult(BaseModel):
     """Итог инвентаризации: какие позиции изменились и сколько движений проведено
-    (излишек — один приход, недостача — расход, иногда с нескольких складов)."""
+    (излишек — один приход, недостача — расход, иногда с нескольких складов).
+    inventory_id — документ в истории; None, если менять было нечего."""
 
     changes: list[InventoryChange]
     movements_created: int
+    inventory_id: uuid.UUID | None = None
+
+
+class InventoryHistoryRead(BaseModel):
+    """Строка списка «История инвентаризаций»."""
+
+    id: uuid.UUID
+    created_at: datetime
+    created_by: uuid.UUID
+    created_by_name: str | None
+    comment: str | None
+    positions: int
+    in_count: int
+    out_count: int
+
+
+class InventoryHistoryDetail(InventoryHistoryRead):
+    """Результат одной инвентаризации: каждая изменённая позиция «было → стало»."""
+
+    lines: list[InventoryChange]

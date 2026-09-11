@@ -52,6 +52,8 @@ class SourceType(str, Enum):
     SHIPMENT = "SHIPMENT"
     MANUAL_ADJUSTMENT = "MANUAL_ADJUSTMENT"
     RETURN = "RETURN"
+    # Движение проведено инвентаризацией; source_id — документ Inventory.
+    INVENTORY = "INVENTORY"
 
 
 class PaymentMethod(str, Enum):

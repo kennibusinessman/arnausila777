@@ -401,6 +401,7 @@ Materials скрыты от SaM/SM.
 | GET products | SA, B, WM, SaM (limited: без сырья/себестоимости) |
 | POST adjustments | SA, B, WM (if allowed) |
 | GET / POST inventory (страница «Инвентаризация»: фактический остаток → приход/расход на разницу) | SA (право `stock.inventory`) |
+| GET inventory/history, inventory/history/{id} (документы `inventories` + строки «было → стало»; движения — `source_type=INVENTORY`) | SA (право `stock.inventory`) |
 
 ### Shipments — `/api/shipments` (только чтение)
 | GET / GET `/{id}` | SA, B, WM, SaM |

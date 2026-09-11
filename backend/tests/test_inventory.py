@@ -40,16 +40,24 @@ async def test_surplus_creates_adjustment_in(client, admin_headers):
     assert body["movements_created"] == 1
     assert float(body["changes"][0]["before"]) == 100
     assert float(body["changes"][0]["after"]) == 120
+    inventory_id = body["inventory_id"]
+    assert inventory_id
 
     assert await balance(client, admin_headers, warehouse_id=wh["id"],
                          item_type="PRODUCT", item_id=prod["id"]) == 120
     inv = [m for m in await _movements(client, admin_headers, prod["id"])
-           if (m["comment"] or "").startswith("Инвентаризация")]
+           if m["source_type"] == "INVENTORY"]
     assert len(inv) == 1
     assert inv[0]["movement_type"] == "ADJUSTMENT_IN"
     assert float(inv[0]["quantity"]) == 20
-    assert inv[0]["source_type"] == "MANUAL_ADJUSTMENT"
+    assert inv[0]["source_id"] == inventory_id
     assert "было 100, стало 120" in inv[0]["comment"] and "Пересчёт" in inv[0]["comment"]
+
+    # Из истории позиции движение ведёт на документ инвентаризации.
+    r = await client.get(f"/stock/history?item_type=PRODUCT&product_id={prod['id']}", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    refs = [row["source_ref"] for row in r.json() if row["source_type"] == "INVENTORY"]
+    assert refs == [{"kind": "inventory", "id": inventory_id}]
 
     r = await client.get("/audit-logs?action=STOCK_INVENTORY", headers=admin_headers)
     assert r.status_code == 200, r.text
@@ -117,6 +125,47 @@ async def test_changed_balance_is_rejected_without_moving_anything(client, admin
     # Ни одна позиция не проведена — даже p1, по которой расхождения не было.
     assert await balance(client, admin_headers, warehouse_id=wh["id"],
                          item_type="PRODUCT", item_id=p1["id"]) == 50
+    assert (await client.get("/stock/inventory/history", headers=admin_headers)).json()["total"] == 0
+
+
+async def test_history_lists_documents_with_result(client, admin_headers):
+    await create_warehouse(client, admin_headers, "FINISHED_GOODS")
+    await create_warehouse(client, admin_headers, "RAW_MATERIALS")
+    prod = await create_product(client, admin_headers)
+    mat = await create_material(client, admin_headers)
+    await client.post("/stock/inventory", headers=admin_headers, json={
+        "items": [{"item_type": "PRODUCT", "item_id": prod["id"], "quantity": "30"},
+                  {"item_type": "MATERIAL", "item_id": mat["id"], "quantity": "8.5"}],
+        "comment": "  Пересчёт после смены  ",
+    })
+    r = await client.post("/stock/inventory", headers=admin_headers, json={
+        "items": [{"item_type": "PRODUCT", "item_id": prod["id"], "quantity": "25"}],
+    })
+    second_id = r.json()["inventory_id"]
+
+    r = await client.get("/stock/inventory/history", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    page = r.json()
+    assert page["total"] == 2
+    latest, first = page["items"]  # новые сверху
+    assert latest["id"] == second_id
+    assert (latest["positions"], latest["in_count"], latest["out_count"]) == (1, 0, 1)
+    assert latest["comment"] is None
+    assert (first["positions"], first["in_count"], first["out_count"]) == (2, 2, 0)
+    assert first["comment"] == "Пересчёт после смены"
+    assert first["created_by_name"] == "Test Admin"
+
+    r = await client.get(f"/stock/inventory/history/{first['id']}", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    lines = r.json()["lines"]
+    # Сначала товары, потом сырьё; название — снимок на момент проведения.
+    assert [(ln["item_type"], ln["name"], float(ln["before"]), float(ln["after"])) for ln in lines] == [
+        ("PRODUCT", prod["name"], 0, 30),
+        ("MATERIAL", mat["name"], 0, 8.5),
+    ]
+
+    r = await client.get(f"/stock/inventory/history/{prod['id']}", headers=admin_headers)
+    assert r.status_code == 404, r.text
 
 
 async def test_unchanged_and_invalid_lines(client, admin_headers):
@@ -128,7 +177,10 @@ async def test_unchanged_and_invalid_lines(client, admin_headers):
 
     r = await client.post("/stock/inventory", headers=admin_headers, json={"items": [line]})
     assert r.status_code == 200, r.text
-    assert r.json() == {"changes": [], "movements_created": 0}
+    assert r.json() == {"changes": [], "movements_created": 0, "inventory_id": None}
+    # Ничего не изменилось — и документа в истории нет.
+    r = await client.get("/stock/inventory/history", headers=admin_headers)
+    assert r.json()["total"] == 0
 
     r = await client.post("/stock/inventory", headers=admin_headers, json={"items": [line, line]})
     assert r.status_code == 400, r.text
@@ -147,6 +199,7 @@ async def test_inventory_is_super_admin_only(client, admin_headers):
         headers = auth(await get_token(client, user["email"], "temp12345"))
         assert (await client.get("/stock/inventory", headers=headers)).status_code == 403
         assert (await client.post("/stock/inventory", headers=headers, json=body)).status_code == 403
+        assert (await client.get("/stock/inventory/history", headers=headers)).status_code == 403
 
     # СА может выдать право точечно — тогда доступ появляется.
     boss = await create_user(client, admin_headers, "boss")

@@ -113,6 +113,7 @@ export const SourceType = {
   SHIPMENT: "SHIPMENT",
   MANUAL_ADJUSTMENT: "MANUAL_ADJUSTMENT",
   RETURN: "RETURN",
+  INVENTORY: "INVENTORY",
 } as const;
 export type SourceType = (typeof SourceType)[keyof typeof SourceType];
 

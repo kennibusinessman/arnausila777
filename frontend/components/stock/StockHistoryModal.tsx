@@ -18,11 +18,13 @@ const SOURCE_ROUTE: Record<MovementSourceRef["kind"], string> = {
   order: "/orders",
   shift_report: "/shift-reports",
   expense: "/expenses",
+  inventory: "/inventory",
 };
 const SOURCE_LABEL: Record<MovementSourceRef["kind"], string> = {
   order: "Заказ",
   shift_report: "Сменный отчёт",
   expense: "Расход",
+  inventory: "Инвентаризация",
 };
 
 /** Позиция, по которой открывают историю движений (товар или материал). */

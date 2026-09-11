@@ -3,7 +3,9 @@ import {
   applyInventory,
   createStockAdjustment,
   deleteStockMovement,
+  getInventoryHistory,
   listInventory,
+  listInventoryHistory,
   listStockBalances,
   listStockItemHistory,
   listStockMovements,
@@ -77,10 +79,30 @@ export function useApplyInventory() {
     // показать свежие цифры, чтобы пользователь сверился и сохранил ещё раз.
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["stock-inventory"] });
+      qc.invalidateQueries({ queryKey: ["inventory-history"] });
       qc.invalidateQueries({ queryKey: ["stock-balances"] });
       qc.invalidateQueries({ queryKey: ["stock-movements"] });
       qc.invalidateQueries({ queryKey: ["stock-history"] });
       qc.invalidateQueries({ queryKey: ["catalog"] });
     },
+  });
+}
+
+/** «История инвентаризаций» постранично. enabled=false — вкладка не открыта / нет права. */
+export function useInventoryHistory(page: number, size: number, enabled = true) {
+  return useQuery({
+    queryKey: ["inventory-history", { page, size }],
+    queryFn: () => listInventoryHistory({ page, size }).then((r) => r.data),
+    enabled,
+  });
+}
+
+/** Результат одной инвентаризации. Документ неизменяем — кэш не протухает. */
+export function useInventoryHistoryDetail(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ["inventory-history", "detail", id],
+    queryFn: () => getInventoryHistory(id).then((r) => r.data),
+    enabled,
+    staleTime: Infinity,
   });
 }

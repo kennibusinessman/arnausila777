@@ -4,6 +4,8 @@ import type { ItemType, MovementType, SourceType } from "@/lib/types/enums";
 import type {
   AdjustmentCreate,
   InventoryApply,
+  InventoryHistoryDetail,
+  InventoryHistoryRead,
   InventoryItemRead,
   InventoryResult,
   StockBalanceRead,
@@ -55,3 +57,11 @@ export const listInventory = () => http.get<InventoryItemRead[]>("/stock/invento
 /** Фактические остатки → приход/расход на разницу (проводит бэкенд, одной транзакцией). */
 export const applyInventory = (data: InventoryApply) =>
   http.post<InventoryResult>("/stock/inventory", data);
+
+/** Проведённые инвентаризации, новые сверху. */
+export const listInventoryHistory = (params: Partial<PageParams> = {}) =>
+  http.get<Page<InventoryHistoryRead>>("/stock/inventory/history", { params });
+
+/** Результат одной инвентаризации. */
+export const getInventoryHistory = (id: string) =>
+  http.get<InventoryHistoryDetail>(`/stock/inventory/history/${id}`);

@@ -11,8 +11,9 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy import ColumnElement, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.core.enums import ItemType, MovementType, SourceType, WarehouseType
@@ -22,10 +23,21 @@ from app.core.exceptions import (
     InsufficientStockError,
     NotFoundError,
 )
-from app.models import Material, Product, StockBalance, StockMovement, Warehouse
+from app.models import (
+    Inventory,
+    InventoryLine,
+    Material,
+    Product,
+    StockBalance,
+    StockMovement,
+    Warehouse,
+)
+from app.schemas.common import PageParams
 from app.schemas.stock import (
     InventoryApply,
     InventoryChange,
+    InventoryHistoryDetail,
+    InventoryHistoryRead,
     InventoryItemRead,
     InventoryResult,
 )
@@ -413,8 +425,15 @@ async def apply_inventory(
             + "; ".join(conflicts)
             + ". Проверьте значения и сохраните ещё раз."
         )
+    if not plan:  # всё совпало — ни движений, ни документа в истории
+        return InventoryResult(changes=[], movements_created=0)
 
     note = (data.comment or "").strip()
+    # Документ истории: на него ссылаются движения (source_id) и строки «было → стало».
+    doc = Inventory(created_by=actor_id, comment=note or None)
+    session.add(doc)
+    await session.flush()
+
     changes: list[InventoryChange] = []
     movements_created = 0
     default_whs = {t: await _default_warehouse_id(session, t) for t in {p[1] for p in plan}}
@@ -441,7 +460,8 @@ async def apply_inventory(
                 movement_type=MovementType.ADJUSTMENT_IN,
                 quantity=delta,
                 unit=item.unit,
-                source_type=SourceType.MANUAL_ADJUSTMENT,
+                source_type=SourceType.INVENTORY,
+                source_id=doc.id,
                 created_by=actor_id,
                 comment=comment,
                 **ids,
@@ -463,7 +483,8 @@ async def apply_inventory(
                     movement_type=MovementType.ADJUSTMENT_OUT,
                     quantity=take,
                     unit=item.unit,
-                    source_type=SourceType.MANUAL_ADJUSTMENT,
+                    source_type=SourceType.INVENTORY,
+                    source_id=doc.id,
                     created_by=actor_id,
                     comment=comment,
                     **ids,
@@ -484,6 +505,17 @@ async def apply_inventory(
             old={"name": item.name, "quantity": _fmt_qty(before)},
             new={"quantity": _fmt_qty(after), **({"comment": note} if note else {})},
         )
+        session.add(
+            InventoryLine(
+                inventory_id=doc.id,
+                item_type=item_type,
+                name=item.name,
+                unit=item.unit,
+                quantity_before=before,
+                quantity_after=after,
+                **ids,
+            )
+        )
         changes.append(
             InventoryChange(
                 item_type=item_type,
@@ -496,7 +528,82 @@ async def apply_inventory(
         )
 
     await session.commit()
-    return InventoryResult(changes=changes, movements_created=movements_created)
+    return InventoryResult(
+        changes=changes, movements_created=movements_created, inventory_id=doc.id
+    )
+
+
+def _history_row(doc: Inventory, positions: int, in_count: int) -> InventoryHistoryRead:
+    # В документ попадают только изменённые позиции: каждая — либо приход, либо расход.
+    return InventoryHistoryRead(
+        id=doc.id,
+        created_at=doc.created_at,
+        created_by=doc.created_by,
+        created_by_name=doc.creator.full_name if doc.creator else None,
+        comment=doc.comment,
+        positions=positions,
+        in_count=in_count,
+        out_count=positions - in_count,
+    )
+
+
+async def inventory_history(
+    session: AsyncSession, params: PageParams
+) -> tuple[list[InventoryHistoryRead], int]:
+    """Страница «Истории инвентаризаций» (новые сверху) и общее число документов."""
+    total = (await session.execute(select(func.count()).select_from(Inventory))).scalar_one()
+    docs = (
+        await session.execute(
+            select(Inventory)
+            .options(joinedload(Inventory.creator))
+            .order_by(Inventory.created_at.desc(), Inventory.id)
+            .offset(params.offset)
+            .limit(params.limit)
+        )
+    ).scalars().all()
+
+    stats: dict[uuid.UUID, tuple[int, int]] = {}
+    if docs:
+        is_in = case((InventoryLine.quantity_after > InventoryLine.quantity_before, 1), else_=0)
+        for inventory_id, positions, in_count in (
+            await session.execute(
+                select(InventoryLine.inventory_id, func.count(), func.sum(is_in))
+                .where(InventoryLine.inventory_id.in_([d.id for d in docs]))
+                .group_by(InventoryLine.inventory_id)
+            )
+        ).all():
+            stats[inventory_id] = (positions, int(in_count or 0))
+    return [_history_row(d, *stats.get(d.id, (0, 0))) for d in docs], total
+
+
+async def inventory_detail(session: AsyncSession, inventory_id: uuid.UUID) -> InventoryHistoryDetail:
+    """Результат одной инвентаризации: товары, затем сырьё, по алфавиту."""
+    doc = (
+        await session.execute(
+            select(Inventory)
+            .options(joinedload(Inventory.creator), selectinload(Inventory.lines))
+            .where(Inventory.id == inventory_id)
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise NotFoundError("Инвентаризация не найдена")
+
+    lines = sorted(doc.lines, key=lambda ln: (ln.item_type is not ItemType.PRODUCT, ln.name.lower()))
+    in_count = sum(1 for ln in lines if ln.quantity_after > ln.quantity_before)
+    return InventoryHistoryDetail(
+        **_history_row(doc, len(lines), in_count).model_dump(),
+        lines=[
+            InventoryChange(
+                item_type=ln.item_type,
+                item_id=ln.product_id or ln.material_id,
+                name=ln.name,
+                unit=ln.unit,
+                before=ln.quantity_before,
+                after=ln.quantity_after,
+            )
+            for ln in lines
+        ],
+    )
 
 
 async def recalc_balances(session: AsyncSession) -> int:

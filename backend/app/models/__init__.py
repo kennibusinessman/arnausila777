@@ -9,6 +9,7 @@ from app.models.base import Base
 from app.models.audit_log import AuditLog
 from app.models.client import Client
 from app.models.expense import Expense, ExpenseCategory
+from app.models.inventory import Inventory, InventoryLine
 from app.models.material import Material
 from app.models.order import Order, OrderItem
 from app.models.payment import Payment
@@ -32,6 +33,8 @@ __all__ = [
     "Client",
     "Expense",
     "ExpenseCategory",
+    "Inventory",
+    "InventoryLine",
     "Material",
     "Order",
     "OrderItem",
