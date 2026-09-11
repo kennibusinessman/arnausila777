@@ -32,6 +32,7 @@ export const Permission = {
   STOCK_VIEW: "stock.view",
   STOCK_ADJUST: "stock.adjust",
   STOCK_DELETE_MOVEMENT: "stock.delete_movement",
+  STOCK_INVENTORY: "stock.inventory",
   EXPENSES_VIEW: "expenses.view",
   EXPENSES_MANAGE: "expenses.manage",
   EXPENSES_DELETE: "expenses.delete",

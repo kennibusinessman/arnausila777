@@ -56,3 +56,43 @@ export interface AdjustmentCreate {
   unit_cost?: string | null;
   comment?: string | null;
 }
+
+/** Позиция страницы «Инвентаризация»: остаток суммарно по всем складам (нулевые тоже). */
+export interface InventoryItemRead {
+  item_type: ItemType;
+  item_id: string;
+  name: string;
+  category: string | null;
+  subcategory: string | null;
+  unit: string;
+  is_active: boolean;
+  quantity: string;
+}
+
+export interface InventoryLine {
+  item_type: ItemType;
+  item_id: string;
+  /** Фактический остаток — каким он должен стать. */
+  quantity: string;
+  /** Остаток, который видел пользователь: если он успел измениться — 409. */
+  expected_quantity?: string | null;
+}
+
+export interface InventoryApply {
+  items: InventoryLine[];
+  comment?: string | null;
+}
+
+export interface InventoryChange {
+  item_type: ItemType;
+  item_id: string;
+  name: string;
+  unit: string;
+  before: string;
+  after: string;
+}
+
+export interface InventoryResult {
+  changes: InventoryChange[];
+  movements_created: number;
+}

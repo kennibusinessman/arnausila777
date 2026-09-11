@@ -11,13 +11,24 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, delete, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.enums import ItemType, MovementType, SourceType
-from app.core.exceptions import BadRequestError, InsufficientStockError, NotFoundError
-from app.models import Material, Product, StockBalance, StockMovement
+from app.core.enums import ItemType, MovementType, SourceType, WarehouseType
+from app.core.exceptions import (
+    BadRequestError,
+    ConflictError,
+    InsufficientStockError,
+    NotFoundError,
+)
+from app.models import Material, Product, StockBalance, StockMovement, Warehouse
+from app.schemas.stock import (
+    InventoryApply,
+    InventoryChange,
+    InventoryItemRead,
+    InventoryResult,
+)
 from app.services import audit_service
 
 # Знак движения: приход (+) или расход (−).
@@ -272,6 +283,220 @@ async def reverse_source_movements(
             row.quantity = reversed_quantity
         await session.delete(mv)
     await session.flush()
+
+
+# Склад, куда приходуется излишок при инвентаризации, — как и везде, подбирается
+# автоматически по типу позиции (см. order_service._resolve_finished_warehouse).
+_INVENTORY_WAREHOUSE_TYPES: dict[ItemType, tuple[WarehouseType, ...]] = {
+    ItemType.PRODUCT: (WarehouseType.FINISHED_GOODS, WarehouseType.MIXED),
+    ItemType.MATERIAL: (WarehouseType.RAW_MATERIALS, WarehouseType.MIXED),
+}
+
+
+async def _default_warehouse_id(session: AsyncSession, item_type: ItemType) -> uuid.UUID | None:
+    """Самый старый активный склад подходящего типа (None — такого склада нет)."""
+    return (
+        await session.execute(
+            select(Warehouse.id)
+            .where(
+                Warehouse.is_active.is_(True),
+                Warehouse.type.in_(_INVENTORY_WAREHOUSE_TYPES[item_type]),
+            )
+            .order_by(Warehouse.created_at.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+def _fmt_qty(value: Decimal) -> str:
+    """120.000 → «120», 12.500 → «12.5» — для комментария движения и журнала аудита."""
+    return format(value.normalize(), "f")
+
+
+async def inventory_items(session: AsyncSession) -> list[InventoryItemRead]:
+    """Все живые товары и сырьё с остатком, суммарным по всем складам."""
+    products = (
+        await session.execute(select(Product).where(Product.deleted_at.is_(None)))
+    ).scalars().all()
+    materials = (
+        await session.execute(select(Material).where(Material.deleted_at.is_(None)))
+    ).scalars().all()
+    totals: dict[tuple[ItemType, uuid.UUID], Decimal] = {}
+    for item_type, product_id, material_id, quantity in (
+        await session.execute(
+            select(
+                StockBalance.item_type,
+                StockBalance.product_id,
+                StockBalance.material_id,
+                func.sum(StockBalance.quantity),
+            ).group_by(StockBalance.item_type, StockBalance.product_id, StockBalance.material_id)
+        )
+    ).all():
+        totals[(item_type, product_id or material_id)] = Decimal(quantity or 0)
+
+    rows = [
+        InventoryItemRead(
+            item_type=ItemType.PRODUCT,
+            item_id=p.id,
+            name=p.name,
+            category=p.category,
+            subcategory=p.subcategory,
+            unit=p.unit,
+            is_active=p.is_active,
+            quantity=totals.get((ItemType.PRODUCT, p.id), Decimal("0")),
+        )
+        for p in products
+    ]
+    rows += [
+        InventoryItemRead(
+            item_type=ItemType.MATERIAL,
+            item_id=m.id,
+            name=m.name,
+            category=m.category,
+            subcategory=None,
+            unit=m.unit,
+            is_active=m.is_active,
+            quantity=totals.get((ItemType.MATERIAL, m.id), Decimal("0")),
+        )
+        for m in materials
+    ]
+    return rows
+
+
+async def apply_inventory(
+    session: AsyncSession, actor_id: uuid.UUID, data: InventoryApply
+) -> InventoryResult:
+    """Инвентаризация: для каждой позиции задан фактический остаток, а приход/расход
+    на разницу проводится автоматически — одной транзакцией на весь запрос.
+
+    Излишек приходуется (ADJUSTMENT_IN) на склад по умолчанию для типа позиции.
+    Недостача списывается (ADJUSTMENT_OUT) сначала со склада по умолчанию, затем с
+    остальных, где позиция есть, — поэтому в минус не уходит ни один склад, а
+    итог по позиции становится ровно тем, что ввёл пользователь."""
+    keys = [(line.item_type, line.item_id) for line in data.items]
+    if len(set(keys)) != len(keys):
+        raise BadRequestError("Одна и та же позиция указана в инвентаризации дважды")
+
+    # Сначала всё проверяем и только потом двигаем склад: при расхождении с тем,
+    # что видел пользователь, не должно проводиться ничего.
+    plan: list[tuple[Product | Material, ItemType, list[StockBalance], Decimal, Decimal]] = []
+    conflicts: list[str] = []
+    for line in data.items:
+        model = Product if line.item_type is ItemType.PRODUCT else Material
+        item = await session.get(model, line.item_id)
+        if item is None or item.deleted_at is not None:
+            raise NotFoundError("Позиция не найдена — возможно, её удалили")
+        id_column = (
+            StockBalance.product_id if line.item_type is ItemType.PRODUCT else StockBalance.material_id
+        )
+        rows = list(
+            (
+                await session.execute(
+                    select(StockBalance).where(
+                        StockBalance.item_type == line.item_type, id_column == line.item_id
+                    )
+                )
+            ).scalars().all()
+        )
+        current = sum((r.quantity for r in rows), Decimal("0"))
+        if line.expected_quantity is not None and current != line.expected_quantity:
+            conflicts.append(
+                f"«{item.name}»: было {_fmt_qty(line.expected_quantity)}, сейчас {_fmt_qty(current)}"
+            )
+            continue
+        if line.quantity != current:
+            plan.append((item, line.item_type, rows, current, line.quantity))
+
+    if conflicts:
+        raise ConflictError(
+            "Остаток изменился, пока вы редактировали: "
+            + "; ".join(conflicts)
+            + ". Проверьте значения и сохраните ещё раз."
+        )
+
+    note = (data.comment or "").strip()
+    changes: list[InventoryChange] = []
+    movements_created = 0
+    default_whs = {t: await _default_warehouse_id(session, t) for t in {p[1] for p in plan}}
+    for item, item_type, rows, before, after in plan:
+        comment = f"Инвентаризация: было {_fmt_qty(before)}, стало {_fmt_qty(after)} {item.unit}"
+        if note:
+            comment = f"{comment}. {note}"
+        ids = (
+            {"product_id": item.id} if item_type is ItemType.PRODUCT else {"material_id": item.id}
+        )
+        default_wh = default_whs[item_type]
+        delta = after - before
+
+        if delta > 0:
+            if default_wh is None:
+                raise BadRequestError(
+                    "Не найден активный склад "
+                    + ("готовой продукции" if item_type is ItemType.PRODUCT else "сырья")
+                )
+            await apply_movement(
+                session,
+                warehouse_id=default_wh,
+                item_type=item_type,
+                movement_type=MovementType.ADJUSTMENT_IN,
+                quantity=delta,
+                unit=item.unit,
+                source_type=SourceType.MANUAL_ADJUSTMENT,
+                created_by=actor_id,
+                comment=comment,
+                **ids,
+            )
+            movements_created += 1
+        else:
+            need = -delta
+            # Склад по умолчанию первым, затем остальные — где позиции больше.
+            sources = sorted(
+                (r for r in rows if r.quantity > 0),
+                key=lambda r: (r.warehouse_id != default_wh, -r.quantity),
+            )
+            for row in sources:
+                take = min(row.quantity, need)
+                await apply_movement(
+                    session,
+                    warehouse_id=row.warehouse_id,
+                    item_type=item_type,
+                    movement_type=MovementType.ADJUSTMENT_OUT,
+                    quantity=take,
+                    unit=item.unit,
+                    source_type=SourceType.MANUAL_ADJUSTMENT,
+                    created_by=actor_id,
+                    comment=comment,
+                    **ids,
+                )
+                movements_created += 1
+                need -= take
+                if need <= 0:
+                    break
+            if need > 0:  # не бывает: сумма плюсовых остатков не меньше итога
+                raise InsufficientStockError(f"Не удалось списать недостачу «{item.name}»")
+
+        await audit_service.log(
+            session,
+            user_id=actor_id,
+            action="STOCK_INVENTORY",
+            entity_type="Product" if item_type is ItemType.PRODUCT else "Material",
+            entity_id=item.id,
+            old={"name": item.name, "quantity": _fmt_qty(before)},
+            new={"quantity": _fmt_qty(after), **({"comment": note} if note else {})},
+        )
+        changes.append(
+            InventoryChange(
+                item_type=item_type,
+                item_id=item.id,
+                name=item.name,
+                unit=item.unit,
+                before=before,
+                after=after,
+            )
+        )
+
+    await session.commit()
+    return InventoryResult(changes=changes, movements_created=movements_created)
 
 
 async def recalc_balances(session: AsyncSession) -> int:

@@ -1,5 +1,6 @@
 """Склад: /api/stock — остатки и движения (stock.view), ручные корректировки
-(stock.adjust), удаление движения (stock.delete_movement)."""
+(stock.adjust), удаление движения (stock.delete_movement), инвентаризация
+(stock.inventory)."""
 from __future__ import annotations
 
 import uuid
@@ -29,6 +30,9 @@ from app.schemas.common import Message, Page
 from app.schemas.stock import (
     AdjustmentCreate,
     AdjustmentDirection,
+    InventoryApply,
+    InventoryItemRead,
+    InventoryResult,
     MovementSourceRef,
     StockBalanceRead,
     StockMovementHistoryRead,
@@ -43,6 +47,7 @@ movements_repo = CRUDRepository(StockMovement)
 StockUser = Annotated[User, Depends(require_permissions(Permission.STOCK_VIEW))]
 Adjuster = Annotated[User, Depends(require_permissions(Permission.STOCK_ADJUST))]
 Remover = Annotated[User, Depends(require_permissions(Permission.STOCK_DELETE_MOVEMENT))]
+Inventory = Annotated[User, Depends(require_permissions(Permission.STOCK_INVENTORY))]
 
 
 @router.get("/balances", response_model=Page[StockBalanceRead])
@@ -241,6 +246,21 @@ async def create_adjustment(
     await db.commit()
     await db.refresh(movement)
     return StockMovementRead.model_validate(movement)
+
+
+@router.get("/inventory", response_model=list[InventoryItemRead])
+async def list_inventory(actor: Inventory, db: DbSession) -> list[InventoryItemRead]:
+    """Все товары и сырьё (включая нулевые) с суммарным остатком — таблица страницы
+    «Инвентаризация»."""
+    return await stock_service.inventory_items(db)
+
+
+@router.post("/inventory", response_model=InventoryResult)
+async def apply_inventory(
+    data: InventoryApply, actor: Inventory, db: DbSession
+) -> InventoryResult:
+    """Фактические остатки → приход/расход на разницу, одной транзакцией."""
+    return await stock_service.apply_inventory(db, actor.id, data)
 
 
 @router.delete("/movements/{movement_id}", response_model=Message)

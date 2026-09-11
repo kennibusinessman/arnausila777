@@ -47,6 +47,9 @@ class Permission(str, Enum):
     STOCK_VIEW = "stock.view"
     STOCK_ADJUST = "stock.adjust"
     STOCK_DELETE_MOVEMENT = "stock.delete_movement"
+    # Инвентаризация: вводишь фактический остаток — приход/расход система проводит
+    # сама. Отделено от stock.adjust: по умолчанию есть только у СА.
+    STOCK_INVENTORY = "stock.inventory"
 
     EXPENSES_VIEW = "expenses.view"
     EXPENSES_MANAGE = "expenses.manage"
@@ -115,6 +118,7 @@ PERMISSION_LABELS: dict[Permission, str] = {
     P.STOCK_VIEW: "Видеть остатки и движения",
     P.STOCK_ADJUST: "Делать корректировки склада",
     P.STOCK_DELETE_MOVEMENT: "Удалять движения склада",
+    P.STOCK_INVENTORY: "Инвентаризация: менять остатки напрямую",
     P.EXPENSES_VIEW: "Видеть расходы",
     P.EXPENSES_MANAGE: "Заводить и править расходы",
     P.EXPENSES_DELETE: "Удалять расходы",
@@ -170,6 +174,7 @@ PERMISSION_GROUPS: list[tuple[str, tuple[Permission, ...]]] = [
             P.STOCK_VIEW,
             P.STOCK_ADJUST,
             P.STOCK_DELETE_MOVEMENT,
+            P.STOCK_INVENTORY,
             P.WAREHOUSES_VIEW,
             P.WAREHOUSES_MANAGE,
         ),
@@ -246,6 +251,7 @@ PERMISSION_GROUPS: list[tuple[str, tuple[Permission, ...]]] = [
 # (удаление сущностей и записей аудита, управление доступами).
 _BOSS: frozenset[Permission] = frozenset(Permission) - {
     P.STOCK_DELETE_MOVEMENT,
+    P.STOCK_INVENTORY,
     P.EXPENSES_DELETE,
     P.PRODUCTS_DELETE,
     P.PRODUCTS_SET_NORM,

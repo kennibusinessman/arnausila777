@@ -86,3 +86,50 @@ class AdjustmentCreate(BaseModel):
         if self.item_type is ItemType.MATERIAL and (self.material_id is None or self.product_id is not None):
             raise ValueError("Для item_type=MATERIAL укажите только material_id")
         return self
+
+
+class InventoryItemRead(BaseModel):
+    """Позиция на странице «Инвентаризация»: товар или сырьё с остатком, суммарным
+    по всем складам (так же, как позиция агрегируется в «Остатках»). Позиции без
+    движений тоже есть — с нулём, чтобы им можно было задать начальный остаток."""
+
+    item_type: ItemType
+    item_id: uuid.UUID
+    name: str
+    category: str | None
+    subcategory: str | None
+    unit: str
+    is_active: bool
+    quantity: Decimal
+
+
+class InventoryLine(BaseModel):
+    item_type: ItemType
+    item_id: uuid.UUID
+    # Фактическое количество — каким остаток должен стать после проведения.
+    quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    # Остаток, который пользователь видел, когда вводил новое значение. Если он с тех
+    # пор изменился (продажа, утверждённая смена), проводить вслепую нельзя — 409.
+    expected_quantity: Decimal | None = None
+
+
+class InventoryApply(BaseModel):
+    items: list[InventoryLine] = Field(min_length=1, max_length=1000)
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class InventoryChange(BaseModel):
+    item_type: ItemType
+    item_id: uuid.UUID
+    name: str
+    unit: str
+    before: Decimal
+    after: Decimal
+
+
+class InventoryResult(BaseModel):
+    """Итог инвентаризации: какие позиции изменились и сколько движений проведено
+    (излишек — один приход, недостача — расход, иногда с нескольких складов)."""
+
+    changes: list[InventoryChange]
+    movements_created: int

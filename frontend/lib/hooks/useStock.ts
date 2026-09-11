@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  applyInventory,
   createStockAdjustment,
   deleteStockMovement,
+  listInventory,
   listStockBalances,
   listStockItemHistory,
   listStockMovements,
@@ -9,7 +11,7 @@ import {
   type ListBalancesParams,
   type ListMovementsParams,
 } from "@/lib/api/stock";
-import type { AdjustmentCreate } from "@/lib/types/stock";
+import type { AdjustmentCreate, InventoryApply } from "@/lib/types/stock";
 
 export function useStockBalances(params: ListBalancesParams) {
   return useQuery({
@@ -41,6 +43,7 @@ export function useCreateAdjustment() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["stock-balances"] });
       qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["stock-inventory"] });
     },
   });
 }
@@ -52,6 +55,32 @@ export function useDeleteStockMovement() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["stock-balances"] });
       qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["stock-inventory"] });
+    },
+  });
+}
+
+/** Таблица «Инвентаризации». enabled=false — у пользователя нет права, не запрашиваем. */
+export function useInventoryItems(enabled = true) {
+  return useQuery({
+    queryKey: ["stock-inventory"],
+    queryFn: () => listInventory().then((r) => r.data),
+    enabled,
+  });
+}
+
+export function useApplyInventory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InventoryApply) => applyInventory(data).then((r) => r.data),
+    // И на успехе, и на ошибке: при 409 («остаток изменился») таблица должна
+    // показать свежие цифры, чтобы пользователь сверился и сохранил ещё раз.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["stock-inventory"] });
+      qc.invalidateQueries({ queryKey: ["stock-balances"] });
+      qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["stock-history"] });
+      qc.invalidateQueries({ queryKey: ["catalog"] });
     },
   });
 }

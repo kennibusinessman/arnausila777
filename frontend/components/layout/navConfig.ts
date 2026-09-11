@@ -2,6 +2,7 @@ import {
   BarChart3,
   Box,
   ClipboardList,
+  ClipboardPen,
   History,
   LayoutDashboard,
   Package,
@@ -55,6 +56,13 @@ export const navItems: NavItem[] = [
     permissions: [Permission.SHIFT_REPORTS_VIEW, Permission.SHIFT_REPORTS_VIEW_ALL],
   },
   { href: "/stock", label: "Остатки", icon: Package, permissions: [Permission.STOCK_VIEW] },
+  // Правка остатков «как есть» — по умолчанию только у супер-админа (право stock.inventory).
+  {
+    href: "/inventory",
+    label: "Инвентаризация",
+    icon: ClipboardPen,
+    permissions: [Permission.STOCK_INVENTORY],
+  },
   { href: "/expenses", label: "Расходы", icon: Receipt, permissions: [Permission.EXPENSES_VIEW] },
   { href: "/payments", label: "Оплаты", icon: Wallet, permissions: [Permission.PAYMENTS_VIEW] },
   { href: "/clients", label: "Клиенты", icon: Users, permissions: [Permission.CLIENTS_VIEW] },

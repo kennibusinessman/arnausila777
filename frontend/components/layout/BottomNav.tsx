@@ -17,6 +17,7 @@ const SHORT_LABEL: Record<string, string> = {
   "/shift-reports": "Смены",
   "/audit-logs": "Аудит",
   "/users": "Доступы",
+  "/inventory": "Инвент.",
 };
 
 export function BottomNav() {
