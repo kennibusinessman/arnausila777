@@ -45,6 +45,7 @@ from app.models import (
 )
 from app.schemas.production_plan import (
     BobbinNeed,
+    BobbinUse,
     FreeStock,
     ItemOrder,
     ItemRow,
@@ -209,6 +210,7 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
 
     bobbin_used: dict[uuid.UUID, Decimal] = {}
     bobbin_cards: dict[uuid.UUID, Product] = {}
+    bobbin_uses: dict[uuid.UUID, list[BobbinUse]] = {}
     cum_sheets = 0
 
     def item_row(i: ProductionTaskItem, bobbin: Product | None) -> ItemRow:
@@ -252,7 +254,8 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
         )
 
     rows: list[TaskRow] = []
-    for t in active:
+    for queue_no, t in enumerate(active, start=1):
+        client_name = clients.get(t.client_id) if t.client_id else None
         items: list[ItemRow] = []
         for i in t.items:
             bobbin = _pick_bobbin(i, by_target, stock)
@@ -276,6 +279,19 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
             bobbin_used[bobbin.id] = after
             bobbin_cards[bobbin.id] = bobbin
             row.bobbins_needed = _q(need)
+            from_stock = min(need, max(on_stock - before, Decimal(0)))
+            bobbin_uses.setdefault(bobbin.id, []).append(
+                BobbinUse(
+                    task_id=t.id,
+                    item_id=i.id,
+                    queue_no=queue_no,
+                    client_name=client_name,
+                    product_name=row.product_name,
+                    needed=_q(need),
+                    from_stock=_q(from_stock),
+                    short=_q(need - from_stock),
+                )
+            )
             if after <= on_stock:
                 row.bobbin_status = "ok"
             elif before < on_stock:
@@ -304,6 +320,7 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
                 needed=_q(needed),
                 shortage=max(math.ceil(needed - on_stock), 0),
                 leftover_sheets=int(tail * b.roll_norm),
+                uses=bobbin_uses.get(bid, []),
             )
         )
     bobbins.sort(key=lambda x: x.name)

@@ -63,6 +63,19 @@ export interface TaskRow {
   late: boolean;
 }
 
+/** Сколько бабины уходит на одну позицию очереди и сколько из этого покрывает склад. */
+export interface BobbinUse {
+  task_id: string;
+  item_id: string;
+  /** Номер задания в очереди (1 — первое). */
+  queue_no: number;
+  client_name: string | null;
+  product_name: string;
+  needed: string;
+  from_stock: string;
+  short: string;
+}
+
 export interface BobbinNeed {
   bobbin_id: string;
   name: string;
@@ -71,6 +84,8 @@ export interface BobbinNeed {
   needed: string;
   shortage: number;
   leftover_sheets: number;
+  /** Раскладка по заданиям очереди — сверху вниз. */
+  uses: BobbinUse[];
 }
 
 export interface Offer {

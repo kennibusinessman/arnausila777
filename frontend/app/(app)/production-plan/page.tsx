@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CalendarClock,
   Check,
+  ChevronDown,
   Gift,
   Layers,
   PackageCheck,
@@ -19,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -40,6 +41,7 @@ import {
 import { Permission } from "@/lib/types/enums";
 import {
   ProductionTaskStatus,
+  type BobbinNeed,
   type BobbinStatus,
   type ItemRow,
   type Offer,
@@ -112,6 +114,8 @@ export default function ProductionPlanPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [qtyAction, setQtyAction] = useState<QtyAction | null>(null);
+  // Раскрытые задания очереди; по умолчанию всё свёрнуто в одну строку.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => setDismissed(loadDismissed()), []);
 
@@ -181,6 +185,24 @@ export default function ProductionPlanPage() {
   }
 
   const busy = reorder.isPending || updateTask.isPending || deleteTask.isPending;
+  const allOpen = active.length > 0 && active.every((t) => expanded.has(t.id));
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Из раскладки бабин — раскрыть задание в очереди и прокрутить к нему. */
+  function jumpTo(taskId: string) {
+    setExpanded((prev) => new Set(prev).add(taskId));
+    requestAnimationFrame(() =>
+      document.getElementById(`task-${taskId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -258,7 +280,7 @@ export default function ProductionPlanPage() {
           }
         />
         <KpiCard
-          label="Бабин не хватает"
+          label="Бабин докупить"
           value={formatNumber(shortage)}
           icon={Layers}
           tone={shortage ? "danger" : "success"}
@@ -266,44 +288,26 @@ export default function ProductionPlanPage() {
         />
       </div>
 
-      {data.bobbins.length > 0 && (
-        <Card title="Бабины на очередь">
-          <div className="flex flex-col divide-y divide-border">
-            {data.bobbins.map((b) => (
-              <div key={b.bobbin_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-[13px]">
-                <div className="min-w-0">
-                  <div className="font-semibold text-text">{b.name}</div>
-                  <div className="text-muted">норма {pcs(b.roll_norm)} с бабины</div>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
-                  <span>
-                    нужно <b>{formatNumber(b.needed, 2)}</b>
-                  </span>
-                  <span>
-                    на складе <b>{formatNumber(b.on_stock, 0)}</b>
-                  </span>
-                  {b.shortage > 0 ? (
-                    <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
-                      не хватает {b.shortage}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">хватает</span>
-                  )}
-                  {b.leftover_sheets > 0 && (
-                    <span className="text-muted">с последней бабины останется ≈ {pcs(b.leftover_sheets)}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      {data.bobbins.length > 0 && <BobbinsCard bobbins={data.bobbins} onJump={jumpTo} />}
 
-      <Card title={`Очередь (${active.length})`}>
+      <Card
+        title={`Очередь (${active.length})`}
+        action={
+          active.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(allOpen ? new Set() : new Set(active.map((t) => t.id)))}
+            >
+              {allOpen ? "Свернуть все" : "Развернуть все"}
+            </Button>
+          )
+        }
+      >
         {active.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-muted">Заданий нет — добавьте первое.</p>
         ) : (
-          <ol className="flex flex-col gap-2.5">
+          <ol className="flex flex-col gap-2">
             {active.map((t, i) => (
               <TaskCard
                 key={t.id}
@@ -311,6 +315,8 @@ export default function ProductionPlanPage() {
                 index={i}
                 isLast={i === active.length - 1}
                 busy={busy}
+                expanded={expanded.has(t.id)}
+                onToggle={() => toggle(t.id)}
                 onMove={move}
                 onEdit={() => {
                   setEditing(t);
@@ -389,11 +395,38 @@ export default function ProductionPlanPage() {
   );
 }
 
+/** Худшее состояние бабин среди позиций — им окрашена свёрнутая строка задания. */
+const BOBBIN_RANK: Record<BobbinStatus, number> = { none: 4, partial: 3, no_norm: 2, ok: 1, done: 0 };
+
+function taskBobbins(t: TaskRow) {
+  let worst: BobbinStatus | null = null;
+  let short = 0;
+  for (const i of t.items) {
+    if (i.bobbin_status && (worst === null || BOBBIN_RANK[i.bobbin_status] > BOBBIN_RANK[worst])) {
+      worst = i.bobbin_status;
+    }
+    short += Number(i.bobbins_short ?? 0);
+  }
+  return { worst, short };
+}
+
+/** Состояние отгрузки задания целиком. */
+function shippingBadge(t: TaskRow) {
+  if (t.shipped === 0) return null;
+  if (t.shipped >= t.quantity) return { label: "Отгружено полностью", className: "bg-success-bg text-success" };
+  return {
+    label: `Отгружено ${pcs(t.shipped)} из ${pcs(t.quantity)}`,
+    className: "bg-warning-bg text-warning",
+  };
+}
+
 interface TaskCardProps {
   task: TaskRow;
   index: number;
   isLast: boolean;
   busy: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onMove: (index: number, step: -1 | 1) => void;
   onEdit: () => void;
   onReady: (item: ItemRow) => void;
@@ -402,23 +435,35 @@ interface TaskCardProps {
   onDelete: () => void;
 }
 
-/** Состояние отгрузки задания целиком — его видно сразу в шапке карточки. */
-function shippingBadge(t: TaskRow) {
-  if (t.shipped === 0) return null;
-  if (t.shipped >= t.quantity) return { label: "Отгружено полностью", className: "bg-success-bg text-success" };
-  return {
-    label: `Отгружено частично: ${pcs(t.shipped)} из ${pcs(t.quantity)}`,
-    className: "bg-warning-bg text-warning",
-  };
-}
-
-function TaskCard({ task: t, index, isLast, busy, onMove, onEdit, onReady, onShip, onCancel, onDelete }: TaskCardProps) {
+function TaskCard({
+  task: t,
+  index,
+  isLast,
+  busy,
+  expanded,
+  onToggle,
+  onMove,
+  onEdit,
+  onReady,
+  onShip,
+  onCancel,
+  onDelete,
+}: TaskCardProps) {
   const badge = shippingBadge(t);
+  const { worst, short } = taskBobbins(t);
+  const chip = worst ? BOBBIN_CHIP[worst] : null;
+  const names = t.items.map((i) => i.product_name).join(", ");
 
   return (
-    <li className="rounded-2xl border border-border bg-white/55 p-3.5">
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center gap-1">
+    <li
+      id={`task-${t.id}`}
+      className={clsx(
+        "scroll-mt-24 rounded-2xl border bg-white/55",
+        worst === "none" ? "border-danger/30" : worst === "partial" ? "border-warning/40" : "border-border"
+      )}
+    >
+      <div className="flex items-center gap-2 px-2.5 py-2">
+        <div className="flex shrink-0 items-center">
           <button
             type="button"
             onClick={() => onMove(index, -1)}
@@ -428,7 +473,6 @@ function TaskCard({ task: t, index, isLast, busy, onMove, onEdit, onReady, onShi
           >
             <ArrowUp className="h-4 w-4" />
           </button>
-          <span className="text-[13px] font-bold tabular-nums text-text">{index + 1}</span>
           <button
             type="button"
             onClick={() => onMove(index, 1)}
@@ -440,69 +484,70 @@ function TaskCard({ task: t, index, isLast, busy, onMove, onEdit, onReady, onShi
           </button>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[14.5px] font-bold text-text">{t.client_name || "Без клиента"}</div>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted">
-                <span>
-                  {t.items.length > 1 ? `${t.items.length} позиции · ` : ""}
-                  {pcs(t.quantity)}
-                </span>
-                {t.eta && (
-                  <span className={clsx("tabular-nums", t.late && "font-semibold text-danger")}>
-                    · готово ≈ {formatDayMonth(t.eta)}
-                  </span>
-                )}
-                {t.deadline && (
-                  <span className={clsx(t.late && "font-semibold text-danger")}>· срок {formatDayMonth(t.deadline)}</span>
-                )}
-                {badge && (
-                  <span className={clsx("rounded-full px-2 py-0.5 text-[11.5px] font-semibold", badge.className)}>
-                    {badge.label}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={onEdit}
-                className="rounded-lg p-1.5 text-muted hover:bg-primary-50 hover:text-primary"
-                aria-label="Изменить"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onCancel}
-                disabled={busy}
-                className="rounded-lg p-1.5 text-muted hover:bg-bg hover:text-text"
-                aria-label="Отменить задание"
-                title="Отменить задание"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={onDelete}
-                className="rounded-lg p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
-                aria-label="Удалить"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-1.5 py-1 text-left hover:bg-white/60"
+        >
+          <span className="flex min-w-0 flex-1 basis-48 items-center gap-2">
+            <span className="w-6 shrink-0 text-[13px] font-bold tabular-nums text-muted">{index + 1}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-[14px] font-bold text-text">{t.client_name || "Без клиента"}</span>
+              <span className="block truncate text-[12px] text-muted">{names}</span>
+            </span>
+          </span>
+          <span className="shrink-0 text-right text-[13px] tabular-nums">
+            <b className="text-text">{pcs(t.remaining)}</b>
+            {t.remaining !== t.quantity && <span className="text-muted"> из {pcs(t.quantity)}</span>}
+          </span>
+          {chip && (
+            <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
+              {worst === "none" || worst === "partial" ? `не хватает ${formatNumber(short, 2)} баб.` : chip.label}
+            </span>
+          )}
+          {badge && (
+            <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", badge.className)}>
+              {badge.label}
+            </span>
+          )}
+          <span className={clsx("shrink-0 text-[12.5px] tabular-nums", t.late ? "font-semibold text-danger" : "text-muted")}>
+            {t.eta ? `≈ ${formatDayMonth(t.eta)}` : ""}
+            {t.deadline && ` · срок ${formatDayMonth(t.deadline)}`}
+          </span>
+          <ChevronDown
+            className={clsx("h-4 w-4 shrink-0 text-muted transition-transform", expanded && "rotate-180")}
+          />
+        </button>
+      </div>
 
-          <div className="mt-2.5 flex flex-col gap-2">
+      {expanded && (
+        <div className="border-t border-border px-3.5 pb-3 pt-2.5">
+          <div className="flex flex-col gap-2">
             {t.items.map((i) => (
               <ItemLine key={i.id} item={i} onReady={() => onReady(i)} onShip={() => onShip(i)} />
             ))}
           </div>
-
           {t.comment && <p className="mt-2 text-[12.5px] text-muted">{t.comment}</p>}
+          <div className="mt-2.5 flex flex-wrap justify-end gap-1.5">
+            <Button variant="ghost" size="sm" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" /> Изменить
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+              <X className="h-3.5 w-3.5" /> Отменить задание
+            </Button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded-lg p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
+              aria-label="Удалить"
+              title="Удалить задание"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </li>
   );
 }
@@ -511,11 +556,24 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
   const chip = i.bobbin_status ? BOBBIN_CHIP[i.bobbin_status] : null;
   const shippedPct = Math.min(i.shipped / i.quantity, 1) * 100;
   const waitingPct = Math.min(i.awaiting_shipment / i.quantity, 1) * 100;
+  const fromOrders = i.orders.reduce((s, o) => s + o.quantity, 0);
 
   return (
     <div className="rounded-xl bg-white/60 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[13.5px] font-semibold text-text">{i.product_name}</span>
+        <div className="min-w-0">
+          <span className="text-[13.5px] font-semibold text-text">{i.product_name}</span>
+          <span className="ml-2 text-[12.5px] tabular-nums text-muted">
+            {i.remaining > 0 ? (
+              <>
+                осталось <b className="text-text">{pcs(i.remaining)}</b>
+                {i.remaining !== i.quantity && ` из ${pcs(i.quantity)}`}
+              </>
+            ) : (
+              <>всё сделано · {pcs(i.quantity)}</>
+            )}
+          </span>
+        </div>
         <div className="flex gap-1.5">
           {i.remaining > 0 && (
             <Button variant="secondary" size="sm" onClick={onReady}>
@@ -530,28 +588,26 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
         </div>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px] tabular-nums">
-        <span className="text-muted">
-          заказано <b className="text-text">{pcs(i.quantity)}</b>
-        </span>
-        <span className="text-muted">
-          готово <b className="text-text">{pcs(i.ready)}</b>
-        </span>
-        <span className="text-muted">
-          отгружено <b className="text-text">{pcs(i.shipped)}</b>
-        </span>
-        {i.awaiting_shipment > 0 && <span className="text-success">ждёт отгрузки {pcs(i.awaiting_shipment)}</span>}
-        <span className="ml-auto font-semibold text-text">
-          {i.remaining > 0 ? `осталось сделать ${pcs(i.remaining)}` : "всё сделано"}
-        </span>
-      </div>
-      <div
-        className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-border"
-        title={`Отгружено ${pcs(i.shipped)}, ждёт отгрузки ${pcs(i.awaiting_shipment)}, осталось сделать ${pcs(i.remaining)}`}
-      >
-        <div className="h-full bg-success" style={{ width: `${shippedPct}%` }} />
-        <div className="h-full bg-success/40" style={{ width: `${waitingPct}%` }} />
-      </div>
+      {i.ready > 0 && (
+        <>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px] tabular-nums text-muted">
+            <span>
+              готово <b className="text-text">{pcs(i.ready)}</b>
+            </span>
+            <span>
+              отгружено <b className="text-text">{pcs(i.shipped)}</b>
+            </span>
+            {i.awaiting_shipment > 0 && <span className="text-success">ждёт отгрузки {pcs(i.awaiting_shipment)}</span>}
+          </div>
+          <div
+            className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-border"
+            title={`Отгружено ${pcs(i.shipped)}, ждёт отгрузки ${pcs(i.awaiting_shipment)}, осталось сделать ${pcs(i.remaining)}`}
+          >
+            <div className="h-full bg-success" style={{ width: `${shippedPct}%` }} />
+            <div className="h-full bg-success/40" style={{ width: `${waitingPct}%` }} />
+          </div>
+        </>
+      )}
 
       {i.orders.length > 0 && (
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-muted">
@@ -561,11 +617,7 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
               {o.order_number} — {pcs(o.quantity)}
             </Link>
           ))}
-          {i.shipped > i.orders.reduce((s, o) => s + o.quantity, 0) && (
-            <span>
-              вручную — {pcs(i.shipped - i.orders.reduce((s, o) => s + o.quantity, 0))}
-            </span>
-          )}
+          {i.shipped > fromOrders && <span>вручную — {pcs(i.shipped - fromOrders)}</span>}
         </div>
       )}
 
@@ -586,6 +638,143 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Бабины на очередь: по каждой бабине — какие задания её берут, сколько каждому
+ * нужно и с какого задания склад заканчивается (расход идёт сверху вниз по очереди).
+ */
+function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (taskId: string) => void }) {
+  // Свёрнуто: у бабины с нехваткой видно, кому не хватит; раскладка — по нажатию.
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <Card title="Бабины на очередь">
+      <div className="flex flex-col gap-2.5">
+        {bobbins.map((b) => {
+          const isOpen = open.has(b.bobbin_id);
+          const firstShort = b.uses.findIndex((u) => Number(u.short) > 0);
+          const shortFor = b.uses.filter((u) => Number(u.short) > 0);
+          return (
+            <div
+              key={b.bobbin_id}
+              className={clsx(
+                "rounded-xl border bg-white/50",
+                b.shortage > 0 ? "border-danger/30" : "border-border"
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => toggle(b.bobbin_id)}
+                aria-expanded={isOpen}
+                className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5 text-left text-[13px]"
+              >
+                <span className="min-w-0 flex-1 basis-48">
+                  <span className="block font-semibold text-text">{b.name}</span>
+                  <span className="block text-[12px] text-muted">
+                    норма {pcs(b.roll_norm)} · заданий {b.uses.length}
+                  </span>
+                </span>
+                <span className="tabular-nums">
+                  нужно <b>{formatNumber(b.needed, 2)}</b>
+                </span>
+                <span className="tabular-nums">
+                  на складе <b>{formatNumber(b.on_stock, 0)}</b>
+                </span>
+                {b.shortage > 0 ? (
+                  <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
+                    докупить {b.shortage}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">
+                    хватает на всю очередь
+                  </span>
+                )}
+                <ChevronDown className={clsx("h-4 w-4 text-muted transition-transform", isOpen && "rotate-180")} />
+              </button>
+
+              {!isOpen && shortFor.length > 0 && (
+                <p className="-mt-1 px-3.5 pb-2.5 text-[12px] text-danger">
+                  не хватит: {shortFor.map((u) => `№${u.queue_no} ${u.client_name || "без клиента"}`).join(", ")}
+                </p>
+              )}
+
+              {isOpen && (
+                <div className="overflow-x-auto border-t border-border px-1.5 pb-2 pt-1">
+                  <table className="w-full min-w-[320px] text-[12.5px] tabular-nums">
+                    <thead>
+                      <tr className="text-left text-[11.5px] text-muted">
+                        <th className="w-10 px-2 py-1.5 font-semibold">№</th>
+                        <th className="px-2 py-1.5 font-semibold">Клиент</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Нужно</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Со склада</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Не хватает</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {b.uses.map((u, n) => {
+                        const short = Number(u.short);
+                        const full = short === 0;
+                        const none = Number(u.from_stock) === 0;
+                        return (
+                          <Fragment key={u.item_id}>
+                            {n === firstShort && (
+                              <tr>
+                                <td colSpan={5} className="px-2 py-1">
+                                  <div className="flex items-center gap-2 text-[11.5px] font-semibold text-danger">
+                                    <span className="h-px flex-1 bg-danger/30" />
+                                    склад закончился
+                                    <span className="h-px flex-1 bg-danger/30" />
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            <tr
+                              onClick={() => onJump(u.task_id)}
+                              className="cursor-pointer rounded-lg hover:bg-primary-50"
+                              title="Показать задание в очереди"
+                            >
+                              <td className="px-2 py-1.5 font-semibold text-muted">{u.queue_no}</td>
+                              <td className="px-2 py-1.5 text-text">{u.client_name || "Без клиента"}</td>
+                              <td className="px-2 py-1.5 text-right">{formatNumber(u.needed, 2)}</td>
+                              <td
+                                className={clsx(
+                                  "px-2 py-1.5 text-right",
+                                  full ? "text-success" : none ? "text-danger" : "text-warning"
+                                )}
+                              >
+                                {full ? "✓ " : none ? "✗ " : "◐ "}
+                                {none ? "—" : formatNumber(u.from_stock, 2)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-semibold text-danger">
+                                {short > 0 ? formatNumber(short, 2) : ""}
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {b.leftover_sheets > 0 && (
+                    <p className="px-2 pt-1.5 text-[12px] text-muted">
+                      С последней начатой бабины останется ≈ {pcs(b.leftover_sheets)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

@@ -78,6 +78,10 @@ async def test_queue_consumes_bobbins_in_order(client, admin_headers):
     assert float(need["needed"]) == 5.2
     assert need["shortage"] == 1
     assert need["leftover_sheets"] == 2000  # 6 бабин − 5,2 = 0,8 × 2500
+    # Раскладка: первому заданию склад покрывает всё, второму — половину.
+    u1, u2 = need["uses"]
+    assert (u1["queue_no"], float(u1["needed"]), float(u1["from_stock"]), float(u1["short"])) == (1, 4.8, 4.8, 0)
+    assert (u2["queue_no"], float(u2["needed"]), float(u2["from_stock"]), float(u2["short"])) == (2, 0.4, 0.2, 0.2)
 
     # 360 шт за смену, 2 смены в сутки: 12000 шт ≈ 33,33 смены ≈ 17 суток.
     assert float(first["shifts_needed"]) == 33.33

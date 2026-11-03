@@ -111,6 +111,21 @@ class TaskRow(BaseModel):
     late: bool = False
 
 
+class BobbinUse(BaseModel):
+    """Сколько этой бабины уходит на одну позицию очереди и сколько из этого
+    покрывает склад (бабины расходуются сверху вниз по очереди)."""
+
+    task_id: uuid.UUID
+    item_id: uuid.UUID
+    # Номер задания в очереди (1 — первое), как на странице.
+    queue_no: int
+    client_name: str | None
+    product_name: str
+    needed: Decimal
+    from_stock: Decimal
+    short: Decimal
+
+
 class BobbinNeed(BaseModel):
     bobbin_id: uuid.UUID
     name: str
@@ -121,6 +136,8 @@ class BobbinNeed(BaseModel):
     shortage: int
     # С последней начатой бабины останется ≈ столько штук (если очередь закрыта).
     leftover_sheets: int
+    # Раскладка по позициям очереди — кому сколько и кому не хватает.
+    uses: list[BobbinUse] = []
 
 
 class Offer(BaseModel):
