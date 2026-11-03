@@ -14,6 +14,11 @@ from app.models.material import Material
 from app.models.order import Order, OrderItem
 from app.models.payment import Payment
 from app.models.product import Product
+from app.models.production_task import (
+    ProductionTask,
+    ProductionTaskItem,
+    ProductionTaskShipment,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.settings import Settings
 from app.models.shift_report import (
@@ -40,6 +45,9 @@ __all__ = [
     "OrderItem",
     "Payment",
     "Product",
+    "ProductionTask",
+    "ProductionTaskItem",
+    "ProductionTaskShipment",
     "RefreshToken",
     "Settings",
     "ShiftReport",

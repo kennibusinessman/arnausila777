@@ -44,6 +44,12 @@ export const ACTION_LABELS: Record<string, string> = {
   REJECT_SHIFT_REPORT: "Отклонение сменного отчёта",
   DELETE_SHIFT_REPORT: "Удаление сменного отчёта",
 
+  CREATE_PRODUCTION_TASK: "План производства: новое задание",
+  UPDATE_PRODUCTION_TASK: "План производства: изменение задания",
+  DELETE_PRODUCTION_TASK: "План производства: удаление задания",
+  ALLOCATE_PRODUCTION_TASK: "План производства: отмечено «готово»",
+  SHIP_PRODUCTION_TASK: "План производства: отмечена отгрузка",
+
   CREATE_SHIPMENT: "Создание отгрузки",
 
   MANUAL_STOCK_ADJUSTMENT: "Корректировка остатка на складе",
@@ -72,6 +78,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   Expense: "Расход",
   Payment: "Платёж",
   ShiftReport: "Сменный отчёт",
+  ProductionTask: "Задание плана",
   Shipment: "Отгрузка",
   StockMovement: "Склад",
   Product: "Товар",

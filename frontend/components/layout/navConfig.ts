@@ -3,6 +3,7 @@ import {
   Box,
   ClipboardList,
   ClipboardPen,
+  Factory,
   History,
   LayoutDashboard,
   Package,
@@ -54,6 +55,13 @@ export const navItems: NavItem[] = [
     label: "Сменные отчёты",
     icon: ClipboardList,
     permissions: [Permission.SHIFT_REPORTS_VIEW, Permission.SHIFT_REPORTS_VIEW_ALL],
+  },
+  // Внутренняя очередь заданий на простыни — по умолчанию только у супер-админа.
+  {
+    href: "/production-plan",
+    label: "План производства",
+    icon: Factory,
+    permissions: [Permission.PRODUCTION_PLAN_MANAGE],
   },
   { href: "/stock", label: "Остатки", icon: Package, permissions: [Permission.STOCK_VIEW] },
   // Правка остатков «как есть» — по умолчанию только у супер-админа (право stock.inventory).

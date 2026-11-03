@@ -42,7 +42,7 @@ from app.schemas.order import (
     OrderSummary,
     OrderUpdate,
 )
-from app.services import audit_service, shipment_service, stock_service
+from app.services import audit_service, production_plan_service, shipment_service, stock_service
 
 
 def _is_sales(actor: User) -> bool:
@@ -475,6 +475,8 @@ async def create_order(session: AsyncSession, actor: User, data: OrderCreate) ->
     shipment = await shipment_service.create_shipment_for_order(
         session, actor, order, warehouse.id, shipment_date, data.comment, products_by_id
     )
+    # Отгрузка засчитывается в открытые задания клиента в плане производства.
+    await production_plan_service.link_order(session, order)
 
     # Авто-расход себестоимости сырья (схема «по продаже»).
     await _sync_order_raw_expense(session, actor, order, _order_weight_kg(items, products_by_id))
@@ -505,11 +507,16 @@ async def update_order(
     if _is_sales(actor):
         payload.pop("manager_id", None)  # менеджер не переназначает владельца
 
+    client_changed = "client_id" in payload and payload["client_id"] != order.client_id
     if "client_id" in payload:
         await _resolve_client(session, actor, payload["client_id"])
 
     for field, value in payload.items():
         setattr(order, field, value)
+    if client_changed:
+        # Отгрузка ушла другому клиенту — перезасчитываем её в его задания.
+        await production_plan_service.unlink_order(session, order.id)
+        await production_plan_service.link_order(session, order)
 
     # Состав (вес) при правке шапки не меняется, но если сдвинули дату заказа —
     # двигаем и дату авто-расхода сырья, чтобы он попал в тот же период в отчётах.
@@ -544,6 +551,7 @@ async def replace_order(
     await _resolve_client(session, actor, data.client_id)
 
     now = datetime.now(timezone.utc)
+    await production_plan_service.unlink_order(session, order.id)
     # 1) Откатываем склад прежней отгрузки (удаляем её движения) и помечаем удалённой.
     for shipment in order.shipments:
         if shipment.deleted_at is not None:
@@ -570,6 +578,7 @@ async def replace_order(
     shipment = await shipment_service.create_shipment_for_order(
         session, actor, order, warehouse.id, shipment_date, data.comment, products_by_id
     )
+    await production_plan_service.link_order(session, order)
 
     # Пересчитываем авто-расход сырья под новый состав/вес.
     await _sync_order_raw_expense(session, actor, order, _order_weight_kg(items, products_by_id))
@@ -651,6 +660,7 @@ async def delete_order(session: AsyncSession, actor: User, order_id: uuid.UUID) 
         shipment.deleted_at = now
 
     order.deleted_at = now
+    await production_plan_service.unlink_order(session, order.id)
     # Убираем авто-расход сырья вместе с заказом.
     raw_expense = await _order_raw_expense(session, order_id)
     if raw_expense is not None:

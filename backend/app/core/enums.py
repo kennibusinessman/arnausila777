@@ -24,6 +24,20 @@ class ShiftReportStatus(str, Enum):
     REJECTED = "REJECTED"
 
 
+class ProductionTaskStatus(str, Enum):
+    """Задание плана производства простыней.
+
+    QUEUED/IN_PROGRESS — активные: стоят в очереди, расходуют бабины в расчёте и
+    держат за собой готовое, но не отгруженное. DONE — всё отгружено клиенту
+    (ставится само). CANCELLED — снято.
+    """
+
+    QUEUED = "QUEUED"
+    IN_PROGRESS = "IN_PROGRESS"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
 class WarehouseType(str, Enum):
     RAW_MATERIALS = "RAW_MATERIALS"
     FINISHED_GOODS = "FINISHED_GOODS"

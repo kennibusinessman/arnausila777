@@ -73,6 +73,10 @@ class Permission(str, Enum):
     # Отделено от products.edit: норму задаёт только СА, править карточку могут и другие.
     PRODUCTS_SET_NORM = "products.set_norm"
 
+    # План производства простыней (очередь заданий, расчёт бабин и сроков).
+    # Внутренний инструмент супер-админа: у остальных ролей по умолчанию нет.
+    PRODUCTION_PLAN_MANAGE = "production_plan.manage"
+
     MATERIALS_VIEW = "materials.view"
     MATERIALS_MANAGE = "materials.manage"
     MATERIALS_DELETE = "materials.delete"
@@ -115,6 +119,7 @@ PERMISSION_LABELS: dict[Permission, str] = {
     P.SHIFT_REPORTS_CREATE: "Заводить и править сменные отчёты",
     P.SHIFT_REPORTS_APPROVE: "Утверждать и отклонять сменные отчёты",
     P.SHIFT_REPORTS_DELETE: "Удалять сменные отчёты",
+    P.PRODUCTION_PLAN_MANAGE: "План производства: очередь заданий",
     P.STOCK_VIEW: "Видеть остатки и движения",
     P.STOCK_ADJUST: "Делать корректировки склада",
     P.STOCK_DELETE_MOVEMENT: "Удалять движения склада",
@@ -187,6 +192,7 @@ PERMISSION_GROUPS: list[tuple[str, tuple[Permission, ...]]] = [
             P.SHIFT_REPORTS_CREATE,
             P.SHIFT_REPORTS_APPROVE,
             P.SHIFT_REPORTS_DELETE,
+            P.PRODUCTION_PLAN_MANAGE,
         ),
     ),
     (
@@ -255,6 +261,7 @@ _BOSS: frozenset[Permission] = frozenset(Permission) - {
     P.EXPENSES_DELETE,
     P.PRODUCTS_DELETE,
     P.PRODUCTS_SET_NORM,
+    P.PRODUCTION_PLAN_MANAGE,
     P.MATERIALS_DELETE,
     P.USERS_DELETE,
     P.USERS_PERMISSIONS,

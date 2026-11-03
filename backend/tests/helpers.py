@@ -27,6 +27,7 @@ async def create_warehouse(client, headers, wtype="FINISHED_GOODS") -> dict:
 async def create_product(client, headers, *, unit="roll", price=500) -> dict:
     return await _post(client, headers, "/products", {
         "name": uniq("P-"), "sku": uniq("SKU-"), "unit": unit, "default_price": price,
+        "base_weight": 1,  # заказ с ценами требует вес товара
     })
 
 

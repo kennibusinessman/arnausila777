@@ -13,6 +13,7 @@ from app.api.routes import (
     materials,
     orders,
     payments,
+    production_plan,
     products,
     reports,
     settings,
@@ -29,6 +30,7 @@ api_router.include_router(users.router)
 api_router.include_router(clients.router)
 api_router.include_router(orders.router)
 api_router.include_router(products.router)
+api_router.include_router(production_plan.router)
 api_router.include_router(materials.router)
 api_router.include_router(warehouses.router)
 api_router.include_router(expense_categories.router)

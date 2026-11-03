@@ -29,6 +29,7 @@ export const Permission = {
   SHIFT_REPORTS_CREATE: "shift_reports.create",
   SHIFT_REPORTS_APPROVE: "shift_reports.approve",
   SHIFT_REPORTS_DELETE: "shift_reports.delete",
+  PRODUCTION_PLAN_MANAGE: "production_plan.manage",
   STOCK_VIEW: "stock.view",
   STOCK_ADJUST: "stock.adjust",
   STOCK_DELETE_MOVEMENT: "stock.delete_movement",
