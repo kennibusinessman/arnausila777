@@ -56,8 +56,9 @@ async def _stock(client, headers, wh, product, qty):
 
 
 async def test_queue_consumes_bobbins_in_order(client, admin_headers):
-    """Норма 2500 шт с бабины, на складе 5 бабин: 12000 шт влезают (4,8 бабины),
-    следующие 1000 шт — только частично (остаётся 0,2 бабины = 500 шт)."""
+    """Норма 2500 шт с бабины, на складе 5 бабин. Бабины целые: 12000 шт —
+    5 бабин (лишние 500 шт останутся на складе), следующим 1000 шт нужна ещё
+    1 бабина, а склад уже закончился."""
     wh = await create_warehouse(client, admin_headers)
     sheet = await _sheet(client, admin_headers)
     bobbin = await _bobbin(client, admin_headers, norm=2500, sheet_id=sheet["id"])
@@ -68,20 +69,15 @@ async def test_queue_consumes_bobbins_in_order(client, admin_headers):
 
     [first], [second] = (t["items"] for t in plan["tasks"])
     assert first["plan_bobbin_id"] == bobbin["id"]
-    assert float(first["bobbins_needed"]) == 4.8
-    assert first["bobbin_status"] == "ok"
-    assert float(second["bobbins_needed"]) == 0.4
-    assert second["bobbin_status"] == "partial"
-    assert float(second["bobbins_short"]) == 0.2
+    assert (first["bobbins_needed"], first["leftover_sheets"], first["bobbin_status"]) == (5, 500, "ok")
+    assert (second["bobbins_needed"], second["leftover_sheets"]) == (1, 1500)
+    assert (second["bobbin_status"], second["bobbins_short"]) == ("none", 1)
 
     [need] = plan["bobbins"]
-    assert float(need["needed"]) == 5.2
-    assert need["shortage"] == 1
-    assert need["leftover_sheets"] == 2000  # 6 бабин − 5,2 = 0,8 × 2500
-    # Раскладка: первому заданию склад покрывает всё, второму — половину.
+    assert (need["needed"], need["shortage"], need["leftover_sheets"]) == (6, 1, 2000)
     u1, u2 = need["uses"]
-    assert (u1["queue_no"], float(u1["needed"]), float(u1["from_stock"]), float(u1["short"])) == (1, 4.8, 4.8, 0)
-    assert (u2["queue_no"], float(u2["needed"]), float(u2["from_stock"]), float(u2["short"])) == (2, 0.4, 0.2, 0.2)
+    assert (u1["queue_no"], u1["sheets"], u1["needed"], u1["from_stock"], u1["short"]) == (1, 12000, 5, 5, 0)
+    assert (u2["queue_no"], u2["sheets"], u2["needed"], u2["from_stock"], u2["short"]) == (2, 1000, 1, 0, 1)
 
     # 360 шт за смену, 2 смены в сутки: 12000 шт ≈ 33,33 смены ≈ 17 суток.
     assert float(first["shifts_needed"]) == 33.33
@@ -134,7 +130,7 @@ async def test_reorder_moves_bobbins_to_new_first(client, admin_headers):
     assert r.status_code == 200, r.text
     first, second = r.json()["tasks"][:2]
     assert first["id"] == b["id"] and first["items"][0]["bobbin_status"] == "ok"
-    assert second["items"][0]["bobbin_status"] == "partial"
+    assert second["items"][0]["bobbin_status"] == "none"
 
     # Неполный список — очередь не трогаем.
     r = await client.post("/production-plan/reorder", json={"ids": [a["id"]]}, headers=admin_headers)
@@ -364,3 +360,20 @@ async def test_order_counts_as_shipment(client, admin_headers):
     assert (a["items"][0]["shipped"], a["items"][0]["ready"], a["items"][0]["orders"]) == (0, 0, [])
     assert (b["items"][0]["shipped"], b["items"][0]["ready"]) == (0, 0)
     assert b["status"] == "QUEUED"
+
+
+async def test_bobbin_color_from_name(client, admin_headers):
+    sheet = await _sheet(client, admin_headers)
+    r = await client.post(
+        "/products",
+        json={
+            "name": uniq("Бабина 12гр голубая "), "unit": "шт", "category": "Спанбонд",
+            "subcategory": "Бабины", "roll_norm": 100, "roll_product_id": sheet["id"],
+        },
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    plan = await _task(client, admin_headers, [(sheet["id"], 150)])
+    [need] = plan["bobbins"]
+    assert need["color"] == "Голубой"
+    assert (need["needed"], need["leftover_sheets"]) == (2, 50)

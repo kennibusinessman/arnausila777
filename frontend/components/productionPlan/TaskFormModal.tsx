@@ -324,8 +324,11 @@ function LineEditor({
             <p className="text-[12.5px] text-muted">
               {preview?.roll_norm ? (
                 <>
-                  ≈ <b className="text-text">{formatNumber(left / preview.roll_norm, 2)}</b> бабины «{preview.name}»
+                  Нужно: <b className="text-text">{formatNumber(Math.ceil(left / preview.roll_norm))} шт</b> бабины «{preview.name}»
                   (норма {formatNumber(preview.roll_norm)} шт)
+                  {Math.ceil(left / preview.roll_norm) * preview.roll_norm - left > 0 && (
+                    <> · лишнее ≈ {formatNumber(Math.ceil(left / preview.roll_norm) * preview.roll_norm - left)} шт останется на складе</>
+                  )}
                 </>
               ) : (
                 <>У бабины нет нормы — расход бабин не посчитать</>

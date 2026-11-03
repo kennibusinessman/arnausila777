@@ -43,6 +43,7 @@ import {
   ProductionTaskStatus,
   type BobbinNeed,
   type BobbinStatus,
+  type BobbinUse,
   type ItemRow,
   type Offer,
   type PlanSettings,
@@ -503,7 +504,7 @@ function TaskCard({
           </span>
           {chip && (
             <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
-              {worst === "none" || worst === "partial" ? `не хватает ${formatNumber(short, 2)} баб.` : chip.label}
+              {worst === "none" || worst === "partial" ? `не хватает бабин: ${formatNumber(short)}` : chip.label}
             </span>
           )}
           {badge && (
@@ -626,11 +627,13 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
           {chip && <span className={clsx("rounded-full px-2 py-0.5 font-semibold", chip.className)}>{chip.label}</span>}
           {i.bobbins_needed !== null && (
             <span className="tabular-nums">
-              бабин <b>{formatNumber(i.bobbins_needed, 2)}</b>
-              {i.plan_bobbin_name && <span className="text-muted"> · {i.plan_bobbin_name}</span>}
-              {i.bobbins_short && <span className="text-danger"> · не хватает {formatNumber(i.bobbins_short, 2)}</span>}
+              {i.plan_bobbin_name ?? "бабин"} — <b>{pcs(i.bobbins_needed)}</b>
+              {i.bobbins_short ? <span className="text-danger"> · не хватает {pcs(i.bobbins_short)}</span> : null}
             </span>
           )}
+          {i.leftover_sheets ? (
+            <span className="tabular-nums text-muted">лишнее ≈ {pcs(i.leftover_sheets)} останется на складе</span>
+          ) : null}
           {i.shifts_needed !== null && (
             <span className="tabular-nums text-muted">≈ {formatNumber(i.shifts_needed, 1)} смены</span>
           )}
@@ -641,133 +644,217 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
   );
 }
 
+type BobbinSort = "clients" | "colors" | "names";
+
+const BOBBIN_SORTS: { key: BobbinSort; label: string }[] = [
+  { key: "clients", label: "По клиентам" },
+  { key: "colors", label: "По цветам" },
+  { key: "names", label: "По наименованию" },
+];
+
+const SORT_KEY = "production-plan:bobbin-sort";
+const NO_COLOR = "Без цвета";
+
+function loadSort(): BobbinSort {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    if (v === "clients" || v === "colors" || v === "names") return v;
+  } catch {
+    /* приватный режим — по умолчанию */
+  }
+  return "clients";
+}
+
+/** Строка раскладки: позиция очереди + бабина, которую она берёт. */
+interface UseRow extends BobbinUse {
+  bobbin: BobbinNeed;
+}
+
+interface BobbinGroup {
+  key: string;
+  title: string;
+  subtitle: string;
+  needed: number;
+  /** На складе — только там, где группа = конкретные бабины (цвет, наименование). */
+  onStock: number | null;
+  short: number;
+  rows: UseRow[];
+}
+
+const sumBy = (rows: UseRow[], f: (r: UseRow) => number) => rows.reduce((s, r) => s + f(r), 0);
+
+function buildGroups(bobbins: BobbinNeed[], sort: BobbinSort): BobbinGroup[] {
+  const rows: UseRow[] = bobbins.flatMap((b) => b.uses.map((u) => ({ ...u, bobbin: b })));
+  const byQueue = (a: UseRow, b: UseRow) => a.queue_no - b.queue_no;
+
+  if (sort === "names") {
+    return bobbins.map((b) => {
+      const rs = rows.filter((r) => r.bobbin.bobbin_id === b.bobbin_id).sort(byQueue);
+      return {
+        key: b.bobbin_id,
+        title: b.name,
+        subtitle: `норма ${pcs(b.roll_norm)} простыней с бабины · заданий ${rs.length}`,
+        needed: b.needed,
+        onStock: Number(b.on_stock),
+        short: b.shortage,
+        rows: rs,
+      };
+    });
+  }
+
+  if (sort === "colors") {
+    const colors = new Map<string, BobbinNeed[]>();
+    for (const b of bobbins) {
+      const c = b.color ?? NO_COLOR;
+      colors.set(c, [...(colors.get(c) ?? []), b]);
+    }
+    return [...colors.entries()]
+      .sort(([a], [b]) => (a === NO_COLOR ? 1 : b === NO_COLOR ? -1 : a.localeCompare(b, "ru")))
+      .map(([color, bs]) => {
+        const ids = new Set(bs.map((b) => b.bobbin_id));
+        const rs = rows.filter((r) => ids.has(r.bobbin.bobbin_id)).sort(byQueue);
+        return {
+          key: `color:${color}`,
+          title: color,
+          subtitle: bs.map((b) => (bs.length > 1 ? `${b.name} — на складе ${formatNumber(b.on_stock, 0)}` : b.name)).join(" · "),
+          needed: sumBy(rs, (r) => r.needed),
+          onStock: bs.reduce((s, b) => s + Number(b.on_stock), 0),
+          short: sumBy(rs, (r) => r.short),
+          rows: rs,
+        };
+      });
+  }
+
+  // По клиентам: задание = группа, в порядке очереди.
+  const tasks = new Map<string, UseRow[]>();
+  for (const r of [...rows].sort(byQueue)) tasks.set(r.task_id, [...(tasks.get(r.task_id) ?? []), r]);
+  return [...tasks.entries()].map(([taskId, rs]) => ({
+    key: `task:${taskId}`,
+    title: `№${rs[0]!.queue_no} · ${rs[0]!.client_name || "Без клиента"}`,
+    subtitle: [...new Set(rs.map((r) => r.product_name))].join(", "),
+    needed: sumBy(rs, (r) => r.needed),
+    onStock: null,
+    short: sumBy(rs, (r) => r.short),
+    rows: rs,
+  }));
+}
+
 /**
- * Бабины на очередь: по каждой бабине — какие задания её берут, сколько каждому
- * нужно и с какого задания склад заканчивается (расход идёт сверху вниз по очереди).
+ * Бабины на очередь: сколько целых бабин нужно каждому заданию, сколько из них
+ * есть на складе (склад расходуется сверху вниз по очереди), сколько докупить и
+ * сколько лишних простыней останется на складе из-за округления до целой бабины.
  */
 function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (taskId: string) => void }) {
-  // Свёрнуто: у бабины с нехваткой видно, кому не хватит; раскладка — по нажатию.
+  const [sort, setSort] = useState<BobbinSort>("clients");
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const toggle = (id: string) =>
+  useEffect(() => setSort(loadSort()), []);
+
+  const groups = useMemo(() => buildGroups(bobbins, sort), [bobbins, sort]);
+  const allOpen = groups.length > 0 && groups.every((g) => open.has(g.key));
+
+  function choose(next: BobbinSort) {
+    setSort(next);
+    setOpen(new Set());
+    try {
+      localStorage.setItem(SORT_KEY, next);
+    } catch {
+      /* не запомним — не страшно */
+    }
+  }
+
+  const toggle = (key: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
 
   return (
-    <Card title="Бабины на очередь">
-      <div className="flex flex-col gap-2.5">
-        {bobbins.map((b) => {
-          const isOpen = open.has(b.bobbin_id);
-          const firstShort = b.uses.findIndex((u) => Number(u.short) > 0);
-          const shortFor = b.uses.filter((u) => Number(u.short) > 0);
+    <Card
+      title="Бабины на очередь"
+      action={
+        <Button variant="ghost" size="sm" onClick={() => setOpen(allOpen ? new Set() : new Set(groups.map((g) => g.key)))}>
+          {allOpen ? "Свернуть все" : "Развернуть все"}
+        </Button>
+      }
+    >
+      <div className="mb-3 inline-flex flex-wrap gap-1 rounded-xl bg-white/60 p-1" role="tablist" aria-label="Сортировка бабин">
+        {BOBBIN_SORTS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            role="tab"
+            aria-selected={sort === s.key}
+            onClick={() => choose(s.key)}
+            className={clsx(
+              "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
+              sort === s.key ? "bg-primary text-white shadow-sm" : "text-muted hover:bg-white hover:text-text"
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {groups.map((g) => {
+          const isOpen = open.has(g.key);
+          const shortRows = g.rows.filter((r) => r.short > 0);
+          const firstShort = sort === "names" ? g.rows.findIndex((r) => r.short > 0) : -1;
           return (
             <div
-              key={b.bobbin_id}
-              className={clsx(
-                "rounded-xl border bg-white/50",
-                b.shortage > 0 ? "border-danger/30" : "border-border"
-              )}
+              key={g.key}
+              className={clsx("rounded-xl border bg-white/50", g.short > 0 ? "border-danger/30" : "border-border")}
             >
               <button
                 type="button"
-                onClick={() => toggle(b.bobbin_id)}
+                onClick={() => toggle(g.key)}
                 aria-expanded={isOpen}
                 className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5 text-left text-[13px]"
               >
                 <span className="min-w-0 flex-1 basis-48">
-                  <span className="block font-semibold text-text">{b.name}</span>
-                  <span className="block text-[12px] text-muted">
-                    норма {pcs(b.roll_norm)} · заданий {b.uses.length}
+                  <span className="block font-semibold text-text">{g.title}</span>
+                  <span className="block truncate text-[12px] text-muted">{g.subtitle}</span>
+                </span>
+                <span className="tabular-nums">
+                  нужно бабин <b>{formatNumber(g.needed)}</b>
+                </span>
+                {g.onStock !== null && (
+                  <span className="tabular-nums">
+                    на складе <b>{formatNumber(g.onStock, 0)}</b>
                   </span>
-                </span>
-                <span className="tabular-nums">
-                  нужно <b>{formatNumber(b.needed, 2)}</b>
-                </span>
-                <span className="tabular-nums">
-                  на складе <b>{formatNumber(b.on_stock, 0)}</b>
-                </span>
-                {b.shortage > 0 ? (
+                )}
+                {g.short > 0 ? (
                   <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
-                    докупить {b.shortage}
+                    {g.onStock === null ? "не хватает" : "докупить"} {formatNumber(g.short)}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">
-                    хватает на всю очередь
-                  </span>
+                  <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">хватает</span>
                 )}
                 <ChevronDown className={clsx("h-4 w-4 text-muted transition-transform", isOpen && "rotate-180")} />
               </button>
 
-              {!isOpen && shortFor.length > 0 && (
+              {!isOpen && shortRows.length > 0 && sort !== "clients" && (
                 <p className="-mt-1 px-3.5 pb-2.5 text-[12px] text-danger">
-                  не хватит: {shortFor.map((u) => `№${u.queue_no} ${u.client_name || "без клиента"}`).join(", ")}
+                  не хватит: {shortRows.map((r) => `№${r.queue_no} ${r.client_name || "без клиента"}`).join(", ")}
                 </p>
               )}
 
               {isOpen && (
-                <div className="overflow-x-auto border-t border-border px-1.5 pb-2 pt-1">
-                  <table className="w-full min-w-[320px] text-[12.5px] tabular-nums">
-                    <thead>
-                      <tr className="text-left text-[11.5px] text-muted">
-                        <th className="w-10 px-2 py-1.5 font-semibold">№</th>
-                        <th className="px-2 py-1.5 font-semibold">Клиент</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Нужно</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Со склада</th>
-                        <th className="px-2 py-1.5 text-right font-semibold">Не хватает</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {b.uses.map((u, n) => {
-                        const short = Number(u.short);
-                        const full = short === 0;
-                        const none = Number(u.from_stock) === 0;
-                        return (
-                          <Fragment key={u.item_id}>
-                            {n === firstShort && (
-                              <tr>
-                                <td colSpan={5} className="px-2 py-1">
-                                  <div className="flex items-center gap-2 text-[11.5px] font-semibold text-danger">
-                                    <span className="h-px flex-1 bg-danger/30" />
-                                    склад закончился
-                                    <span className="h-px flex-1 bg-danger/30" />
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                            <tr
-                              onClick={() => onJump(u.task_id)}
-                              className="cursor-pointer rounded-lg hover:bg-primary-50"
-                              title="Показать задание в очереди"
-                            >
-                              <td className="px-2 py-1.5 font-semibold text-muted">{u.queue_no}</td>
-                              <td className="px-2 py-1.5 text-text">{u.client_name || "Без клиента"}</td>
-                              <td className="px-2 py-1.5 text-right">{formatNumber(u.needed, 2)}</td>
-                              <td
-                                className={clsx(
-                                  "px-2 py-1.5 text-right",
-                                  full ? "text-success" : none ? "text-danger" : "text-warning"
-                                )}
-                              >
-                                {full ? "✓ " : none ? "✗ " : "◐ "}
-                                {none ? "—" : formatNumber(u.from_stock, 2)}
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-semibold text-danger">
-                                {short > 0 ? formatNumber(short, 2) : ""}
-                              </td>
-                            </tr>
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {b.leftover_sheets > 0 && (
-                    <p className="px-2 pt-1.5 text-[12px] text-muted">
-                      С последней начатой бабины останется ≈ {pcs(b.leftover_sheets)}
-                    </p>
-                  )}
+                <div className="flex flex-col border-t border-border px-2 pb-2 pt-1">
+                  {g.rows.map((r, n) => (
+                    <Fragment key={`${r.item_id}:${r.bobbin.bobbin_id}`}>
+                      {n === firstShort && n > 0 && (
+                        <div className="flex items-center gap-2 px-2 py-1 text-[11.5px] font-semibold text-danger">
+                          <span className="h-px flex-1 bg-danger/30" />
+                          склад закончился
+                          <span className="h-px flex-1 bg-danger/30" />
+                        </div>
+                      )}
+                      <UseLine row={r} showClient={sort !== "clients"} onClick={() => onJump(r.task_id)} />
+                    </Fragment>
+                  ))}
                 </div>
               )}
             </div>
@@ -775,6 +862,51 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
         })}
       </div>
     </Card>
+  );
+}
+
+function UseLine({ row: r, showClient, onClick }: { row: UseRow; showClient: boolean; onClick: () => void }) {
+  const full = r.short === 0;
+  const none = r.from_stock === 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Показать задание в очереди"
+      className="flex w-full flex-col gap-1 rounded-lg px-2 py-2 text-left text-[13px] hover:bg-primary-50 sm:flex-row sm:items-center sm:gap-4"
+    >
+      <span className="min-w-0 flex-1">
+        {showClient && (
+          <span className="block text-[12px] font-semibold text-muted">
+            №{r.queue_no} · {r.client_name || "Без клиента"}
+          </span>
+        )}
+        <span className="block text-text">
+          <span className="text-muted">Нужно:</span> {r.product_name} — <b>{pcs(r.sheets)}</b>, {r.bobbin.name} —{" "}
+          <b>{pcs(r.needed)}</b>
+        </span>
+        {r.leftover_sheets > 0 && (
+          <span className="block text-[12px] text-muted">
+            Лишнее: ≈ {pcs(r.leftover_sheets)} простыней останется на складе
+          </span>
+        )}
+      </span>
+      <span className="flex shrink-0 flex-wrap items-center gap-1.5 text-[12px] tabular-nums">
+        <span
+          className={clsx(
+            "rounded-full px-2 py-0.5 font-semibold",
+            full ? "bg-success-bg text-success" : none ? "bg-danger-bg text-danger" : "bg-warning-bg text-warning"
+          )}
+        >
+          {full ? "✓ есть на складе" : none ? "✗ на складе нет" : `◐ со склада ${formatNumber(r.from_stock)}`}
+        </span>
+        {r.short > 0 && (
+          <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
+            не хватает {pcs(r.short)}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 

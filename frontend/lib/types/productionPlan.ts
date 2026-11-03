@@ -39,9 +39,12 @@ export interface ItemRow {
   awaiting_shipment: number;
   /** Из отгруженного — по каким заказам; остальное — ручные отметки. */
   orders: ItemOrder[];
-  bobbins_needed: string | null;
+  /** Целых бабин на позицию (с округлением вверх). */
+  bobbins_needed: number | null;
   bobbin_status: BobbinStatus | null;
-  bobbins_short: string | null;
+  bobbins_short: number | null;
+  /** Лишние простыни из-за округления до целой бабины — останутся на складе. */
+  leftover_sheets: number | null;
   shifts_needed: string | null;
   eta: string | null;
 }
@@ -63,7 +66,7 @@ export interface TaskRow {
   late: boolean;
 }
 
-/** Сколько бабины уходит на одну позицию очереди и сколько из этого покрывает склад. */
+/** Позиция очереди, которая берёт бабину. Бабины целые, склад расходуется сверху вниз. */
 export interface BobbinUse {
   task_id: string;
   item_id: string;
@@ -71,20 +74,25 @@ export interface BobbinUse {
   queue_no: number;
   client_name: string | null;
   product_name: string;
-  needed: string;
-  from_stock: string;
-  short: string;
+  /** Сколько простыней осталось сделать. */
+  sheets: number;
+  needed: number;
+  from_stock: number;
+  short: number;
+  /** Лишние простыни из-за округления — останутся на складе. */
+  leftover_sheets: number;
 }
 
 export interface BobbinNeed {
   bobbin_id: string;
   name: string;
+  /** Цвет из названия; null — не распознан. */
+  color: string | null;
   roll_norm: number;
   on_stock: string;
-  needed: string;
+  needed: number;
   shortage: number;
   leftover_sheets: number;
-  /** Раскладка по заданиям очереди — сверху вниз. */
   uses: BobbinUse[];
 }
 

@@ -83,12 +83,16 @@ class ItemRow(BaseModel):
     # Из отгруженного — по каким заказам (остальное — ручные отметки).
     orders: list[ItemOrder] = []
     # Расчёт — только у активных заданий.
-    bobbins_needed: Decimal | None = None
+    # Целых бабин на позицию (с округлением вверх).
+    bobbins_needed: int | None = None
     # ok — бабин на складе хватает с учётом позиций выше по очереди,
     # partial — частично, none — нет совсем, no_norm — у бабины нет нормы
     # или к наименованию не привязана ни одна бабина, done — делать нечего.
     bobbin_status: str | None = None
-    bobbins_short: Decimal | None = None
+    bobbins_short: int | None = None
+    # Из-за округления до целой бабины выйдет на столько простыней больше —
+    # они останутся на складе.
+    leftover_sheets: int | None = None
     shifts_needed: Decimal | None = None
     eta: date | None = None
 
@@ -112,8 +116,11 @@ class TaskRow(BaseModel):
 
 
 class BobbinUse(BaseModel):
-    """Сколько этой бабины уходит на одну позицию очереди и сколько из этого
-    покрывает склад (бабины расходуются сверху вниз по очереди)."""
+    """Одна позиция очереди, которая берёт эту бабину.
+
+    Бабины целые: на позицию нужно ⌈осталось сделать / норма⌉. Склад
+    расходуется сверху вниз по очереди.
+    """
 
     task_id: uuid.UUID
     item_id: uuid.UUID
@@ -121,20 +128,26 @@ class BobbinUse(BaseModel):
     queue_no: int
     client_name: str | None
     product_name: str
-    needed: Decimal
-    from_stock: Decimal
-    short: Decimal
+    # Сколько простыней осталось сделать по позиции.
+    sheets: int
+    needed: int
+    from_stock: int
+    short: int
+    # Лишние простыни из-за округления до целой бабины — останутся на складе.
+    leftover_sheets: int
 
 
 class BobbinNeed(BaseModel):
     bobbin_id: uuid.UUID
     name: str
+    # Цвет из названия бабины/простыни; None — не распознан.
+    color: str | None
     roll_norm: int
     on_stock: Decimal
-    needed: Decimal
-    # Сколько целых бабин докупить/сделать, чтобы закрыть всю очередь.
+    needed: int
+    # Сколько целых бабин докупить, чтобы закрыть всю очередь.
     shortage: int
-    # С последней начатой бабины останется ≈ столько штук (если очередь закрыта).
+    # Всего лишних простыней по всем позициям — останутся на складе.
     leftover_sheets: int
     # Раскладка по позициям очереди — кому сколько и кому не хватает.
     uses: list[BobbinUse] = []

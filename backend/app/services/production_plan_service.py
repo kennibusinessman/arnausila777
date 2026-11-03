@@ -10,8 +10,8 @@
 порядку позиций:
 
 - осталось сделать = заказано − готово;
-- бабин нужно = осталось / норма выхода бабины (дробно: остаток начатой бабины
-  переходит на следующую позицию с той же бабиной);
+- бабин нужно = ⌈осталось / норма выхода бабины⌉ — целые бабины на каждую
+  позицию; лишние простыни с последней бабины остаются на складе;
 - бабины на складе расходуются накопительно — позиция ниже по очереди получает
   то, что осталось после позиций выше;
 - дата готовности — накопительно по выработке линии (шт за смену × смен в сутки).
@@ -30,7 +30,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.catalog import is_bobbin
+from app.core.catalog import guess_color, is_bobbin
 from app.core.enums import ItemType, ProductionTaskStatus
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models import (
@@ -208,7 +208,7 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
     by_target = await _bobbin_index(db)
     stock = await _stock_by_product(db)
 
-    bobbin_used: dict[uuid.UUID, Decimal] = {}
+    bobbin_used: dict[uuid.UUID, int] = {}
     bobbin_cards: dict[uuid.UUID, Product] = {}
     bobbin_uses: dict[uuid.UUID, list[BobbinUse]] = {}
     cum_sheets = 0
@@ -272,14 +272,18 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
             if bobbin is None or not bobbin.roll_norm:
                 row.bobbin_status = "no_norm"
                 continue
-            need = Decimal(row.remaining) / bobbin.roll_norm
-            on_stock = stock.get(bobbin.id, Decimal(0))
-            before = bobbin_used.get(bobbin.id, Decimal(0))
-            after = before + need
-            bobbin_used[bobbin.id] = after
+            # Бабины берутся целыми: последнюю докручивают до конца, лишние
+            # простыни остаются на складе.
+            need = math.ceil(row.remaining / bobbin.roll_norm)
+            leftover = need * bobbin.roll_norm - row.remaining
+            on_stock = int(stock.get(bobbin.id, Decimal(0)))
+            before = bobbin_used.get(bobbin.id, 0)
+            from_stock = min(need, max(on_stock - before, 0))
+            short = need - from_stock
+            bobbin_used[bobbin.id] = before + need
             bobbin_cards[bobbin.id] = bobbin
-            row.bobbins_needed = _q(need)
-            from_stock = min(need, max(on_stock - before, Decimal(0)))
+            row.bobbins_needed = need
+            row.leftover_sheets = leftover
             bobbin_uses.setdefault(bobbin.id, []).append(
                 BobbinUse(
                     task_id=t.id,
@@ -287,19 +291,21 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
                     queue_no=queue_no,
                     client_name=client_name,
                     product_name=row.product_name,
-                    needed=_q(need),
-                    from_stock=_q(from_stock),
-                    short=_q(need - from_stock),
+                    sheets=row.remaining,
+                    needed=need,
+                    from_stock=from_stock,
+                    short=short,
+                    leftover_sheets=leftover,
                 )
             )
-            if after <= on_stock:
+            if short == 0:
                 row.bobbin_status = "ok"
-            elif before < on_stock:
+            elif from_stock > 0:
                 row.bobbin_status = "partial"
-                row.bobbins_short = _q(after - on_stock)
+                row.bobbins_short = short
             else:
                 row.bobbin_status = "none"
-                row.bobbins_short = _q(need)
+                row.bobbins_short = short
         rows.append(task_row(t, items))
 
     for t in closed:
@@ -308,19 +314,19 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
     bobbins = []
     for bid, needed in bobbin_used.items():
         b = bobbin_cards[bid]
-        on_stock = stock.get(bid, Decimal(0))
-        # Сколько штук не докрутят с последней начатой бабины, когда очередь закроют.
-        tail = Decimal(math.ceil(needed)) - needed
+        uses = bobbin_uses.get(bid, [])
+        target = names.get(b.roll_product_id) if b.roll_product_id else None
         bobbins.append(
             BobbinNeed(
                 bobbin_id=bid,
                 name=b.name,
+                color=guess_color(b.name, target.name if target else None),
                 roll_norm=b.roll_norm,
-                on_stock=on_stock,
-                needed=_q(needed),
-                shortage=max(math.ceil(needed - on_stock), 0),
-                leftover_sheets=int(tail * b.roll_norm),
-                uses=bobbin_uses.get(bid, []),
+                on_stock=stock.get(bid, Decimal(0)),
+                needed=needed,
+                shortage=sum(u.short for u in uses),
+                leftover_sheets=sum(u.leftover_sheets for u in uses),
+                uses=uses,
             )
         )
     bobbins.sort(key=lambda x: x.name)
