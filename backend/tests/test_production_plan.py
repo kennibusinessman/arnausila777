@@ -377,3 +377,41 @@ async def test_bobbin_color_from_name(client, admin_headers):
     [need] = plan["bobbins"]
     assert need["color"] == "Голубой"
     assert (need["needed"], need["leftover_sheets"]) == (2, 50)
+
+
+async def test_default_bobbin_is_most_popular(client, admin_headers):
+    """У простыни две бабины. Бабины A на складе больше, но для этой простыни
+    уже брали B — в новом задании без выбора бабины расчёт пойдёт по B."""
+    wh = await create_warehouse(client, admin_headers)
+    sheet = await _sheet(client, admin_headers)
+    a = await _bobbin(client, admin_headers, norm=1000, sheet_id=sheet["id"])
+    b = await _bobbin(client, admin_headers, norm=1000, sheet_id=sheet["id"])
+    await _stock(client, admin_headers, wh, a, 10)
+    await _stock(client, admin_headers, wh, b, 1)
+
+    plan = await _task(client, admin_headers, [(sheet["id"], 500)])
+    first = next(t for t in plan["tasks"] if t["status"] == "QUEUED")
+    assert first["items"][0]["plan_bobbin_id"] == a["id"]  # истории нет — по остатку
+
+    r = await client.post(
+        "/production-plan/tasks",
+        json={"items": [{"product_id": sheet["id"], "bobbin_id": b["id"], "quantity": 100}]},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    plan = (await client.get("/production-plan", headers=admin_headers)).json()
+    assert _find(plan, first["id"])["items"][0]["plan_bobbin_id"] == b["id"]
+
+    opts = (await client.get("/production-plan/options", headers=admin_headers)).json()
+    bobbins = {x["id"]: x for p in opts["products"] for x in p["bobbins"]}
+    assert bobbins[b["id"]]["chosen"] == 1 and bobbins[a["id"]]["chosen"] == 0
+
+
+async def test_comment_in_bobbin_uses(client, admin_headers):
+    sheet = await _sheet(client, admin_headers)
+    await _bobbin(client, admin_headers, norm=1000, sheet_id=sheet["id"])
+    c = await create_client_entity(client, admin_headers)
+    await _task(client, admin_headers, [(sheet["id"], 100)], client_id=c["id"], comment="Склад")
+    plan = await _task(client, admin_headers, [(sheet["id"], 200)], client_id=c["id"], comment="Мегафарм")
+    uses = plan["bobbins"][0]["uses"]
+    assert [u["comment"] for u in uses] == ["Склад", "Мегафарм"]

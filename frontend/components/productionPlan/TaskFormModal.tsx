@@ -8,7 +8,8 @@ import { Modal } from "@/components/ui/Modal";
 import { apiErrorMessage } from "@/lib/api/http";
 import { useClientOptions } from "@/lib/hooks/useClients";
 import { useCreateTask, usePlanOptions, useUpdateTask } from "@/lib/hooks/useProductionPlan";
-import type { PlanProductOption, PlanSettings, TaskItemIn, TaskRow } from "@/lib/types/productionPlan";
+import { unitLabel } from "@/components/productionPlan/QuantityModal";
+import type { PlanProductOption, ProductionTaskKind, TaskItemIn, TaskRow } from "@/lib/types/productionPlan";
 import { formatNumber, formatQuantity } from "@/lib/utils/format";
 
 interface Props {
@@ -16,7 +17,10 @@ interface Props {
   onClose: () => void;
   /** Задание для правки; null — новое. */
   task: TaskRow | null;
-  settings: PlanSettings;
+  /** Линия: простыни (по умолчанию) или спанбонд. */
+  kind?: ProductionTaskKind;
+  /** Выработка линии за смену: штук простыней или кг спанбонда. */
+  perShift: number;
 }
 
 /** Строка формы. Числа — строками, как в инпутах. */
@@ -53,8 +57,9 @@ const isWhole = (v: string, min: number) => {
 const leftToMake = (l: Line) =>
   isWhole(l.quantity, 1) ? Math.max(Number(l.quantity) - (Number(l.ready) || 0), 0) : 0;
 
-export function TaskFormModal({ open, onClose, task, settings }: Props) {
-  const options = usePlanOptions(open);
+export function TaskFormModal({ open, onClose, task, kind = "SHEETS", perShift }: Props) {
+  const spunbond = kind === "SPUNBOND";
+  const options = usePlanOptions(open, kind);
   const clientOptions = useClientOptions();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -93,16 +98,26 @@ export function TaskFormModal({ open, onClose, task, settings }: Props) {
       products.map((p) => ({
         value: p.id,
         label: p.name,
-        sublabel: p.bobbins.map((b) => b.name).join(", "),
+        sublabel: spunbond
+          ? [p.subcategory, `на складе ${formatQuantity(p.on_stock ?? 0)} ${unitLabel(p.unit)}`]
+              .filter(Boolean)
+              .join(" · ")
+          : p.bobbins.map((b) => b.name).join(", "),
       })),
-    [products]
+    [products, spunbond]
   );
   const savedReady = useMemo(() => new Map(task?.items.map((i) => [i.id, i.ready]) ?? []), [task]);
 
   const setLine = (key: string, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
-  const total = lines.reduce((s, l) => s + leftToMake(l), 0);
+  // Простыни — штуки; спанбонд — кг сырья (у товара в штуках — по весу из карточки).
+  const total = lines.reduce((s, l) => {
+    const left = leftToMake(l);
+    if (!spunbond) return s + left;
+    const perUnit = l.productId ? byId.get(l.productId)?.kg_per_unit : null;
+    return s + (perUnit ? left * Number(perUnit) : 0);
+  }, 0);
 
   function submit() {
     setError(null);
@@ -130,7 +145,7 @@ export function TaskFormModal({ open, onClose, task, settings }: Props) {
       }
       items.push(item);
     }
-    const body = { client_id: clientId, deadline: deadline || null, comment: comment.trim() || null, items };
+    const body = { ...(task ? {} : { kind }), client_id: clientId, deadline: deadline || null, comment: comment.trim() || null, items };
     const onError = (err: unknown) => setError(apiErrorMessage(err, "Не удалось сохранить задание"));
     if (task) updateTask.mutate({ id: task.id, data: body }, { onSuccess: onClose, onError });
     else createTask.mutate(body, { onSuccess: onClose, onError });
@@ -166,7 +181,9 @@ export function TaskFormModal({ open, onClose, task, settings }: Props) {
           </div>
           {!options.isLoading && products.length === 0 && (
             <p className="mb-2 text-[12.5px] text-muted">
-              Нет наименований с привязанной бабиной — привяжите бабину к простыне на странице «Товары».
+              {spunbond
+                ? "Нет товаров категории «Спанбонд» — заведите их на странице «Товары»."
+                : "Нет наименований с привязанной бабиной — привяжите бабину к простыне на странице «Товары»."}
             </p>
           )}
           <div className="flex flex-col gap-2.5">
@@ -178,6 +195,7 @@ export function TaskFormModal({ open, onClose, task, settings }: Props) {
                 product={l.productId ? byId.get(l.productId) : undefined}
                 productOptions={productOptions}
                 loading={options.isLoading}
+                spunbond={spunbond}
                 // Позицию с готовыми штуками нельзя убрать или сменить ей наименование.
                 locked={(l.id ? (savedReady.get(l.id) ?? 0) : 0) > 0}
                 canRemove={lines.length > 1}
@@ -195,8 +213,11 @@ export function TaskFormModal({ open, onClose, task, settings }: Props) {
 
         {total > 0 && (
           <p className="rounded-xl bg-primary-50 px-3.5 py-2.5 text-[13px] text-text">
-            Осталось сделать <b>{formatNumber(total)} шт</b> · ≈{" "}
-            <b>{formatNumber(total / settings.sheets_per_shift, 1)}</b> смены
+            {spunbond ? "Сырья на оставшееся" : "Осталось сделать"}{" "}
+            <b>
+              {formatNumber(total, spunbond ? 1 : 0)} {spunbond ? "кг" : "шт"}
+            </b>{" "}
+            · ≈ <b>{formatNumber(total / perShift, 1)}</b> смены
           </p>
         )}
 
@@ -221,6 +242,7 @@ interface LineEditorProps {
   product: PlanProductOption | undefined;
   productOptions: { value: string; label: string; sublabel?: string }[];
   loading: boolean;
+  spunbond: boolean;
   locked: boolean;
   canRemove: boolean;
   onChange: (patch: Partial<Line>) => void;
@@ -233,20 +255,25 @@ function LineEditor({
   product,
   productOptions,
   loading,
+  spunbond,
   locked,
   canRemove,
   onChange,
   onRemove,
 }: LineEditorProps) {
   const bobbins = product?.bobbins ?? [];
-  // Предпросмотр: та же бабина, что выберет сервер, — указанная или с нормой и большим остатком.
-  const preview =
-    bobbins.find((b) => b.id === l.bobbinId) ??
-    [...bobbins].sort(
-      (a, b) =>
-        Number(b.roll_norm !== null) - Number(a.roll_norm !== null) || Number(b.on_stock) - Number(a.on_stock)
-    )[0];
+  // Предпросмотр: та же бабина, что выберет сервер, — указанная, а иначе с нормой,
+  // самая ходовая для этой простыни (сменные отчёты, потом ручной выбор), потом по остатку.
+  const popular = [...bobbins].sort(
+    (a, b) =>
+      Number(b.roll_norm !== null) - Number(a.roll_norm !== null) ||
+      Number(b.used ?? 0) - Number(a.used ?? 0) ||
+      (b.chosen ?? 0) - (a.chosen ?? 0) ||
+      Number(b.on_stock) - Number(a.on_stock)
+  )[0];
+  const preview = bobbins.find((b) => b.id === l.bobbinId) ?? popular;
   const left = leftToMake(l);
+  const u = unitLabel(product?.unit);
 
   return (
     <div className="rounded-xl border border-border bg-white/50 p-3">
@@ -258,7 +285,7 @@ function LineEditor({
               value={l.productId}
               onChange={(v) => onChange({ productId: v, bobbinId: null })}
               options={productOptions}
-              placeholder={loading ? "Загрузка…" : "Выбрать простыню…"}
+              placeholder={loading ? "Загрузка…" : spunbond ? "Выбрать спанбонд…" : "Выбрать простыню…"}
               disabled={locked}
               allowClear={false}
             />
@@ -267,8 +294,8 @@ function LineEditor({
               min="1"
               step="1"
               inputMode="numeric"
-              placeholder="Кол-во, шт"
-              aria-label="Количество, шт"
+              placeholder={`Кол-во, ${u}`}
+              aria-label={`Количество, ${u}`}
               value={l.quantity}
               onChange={(e) => onChange({ quantity: e.target.value })}
               className={INPUT}
@@ -282,10 +309,14 @@ function LineEditor({
               className={INPUT}
               aria-label="Бабина"
             >
-              <option value="">Бабина: любая (подберётся по остатку)</option>
+              <option value="">
+                Бабина: по умолчанию{popular ? ` — ${popular.name}` : ""}
+                {Number(popular?.used ?? 0) > 0 ? " (чаще всего)" : " (подберётся по остатку)"}
+              </option>
               {bobbins.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name} — норма {b.roll_norm ?? "—"} шт, на складе {formatQuantity(b.on_stock)}
+                  {Number(b.used ?? 0) > 0 ? `, ушло по сменам ${formatQuantity(b.used!)}` : ""}
                 </option>
               ))}
             </select>
@@ -294,7 +325,7 @@ function LineEditor({
           {l.id && (
             <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className={SMALL_LABEL}>Готово, шт</label>
+                <label className={SMALL_LABEL}>Готово, {u}</label>
                 <input
                   type="number"
                   min="0"
@@ -306,7 +337,7 @@ function LineEditor({
                 />
               </div>
               <div>
-                <label className={SMALL_LABEL}>Отгружено, шт</label>
+                <label className={SMALL_LABEL}>Отгружено, {u}</label>
                 <input
                   type="number"
                   min="0"
@@ -320,7 +351,21 @@ function LineEditor({
             </div>
           )}
 
-          {left > 0 && product && (
+          {left > 0 && product && spunbond && (
+            <p className="text-[12.5px] text-muted">
+              {product.kg_per_unit ? (
+                <>
+                  Полипропилена: <b className="text-text">{formatNumber(left * Number(product.kg_per_unit), 1)} кг</b>
+                  {u !== "кг" && <> (по {formatQuantity(product.kg_per_unit)} кг за {u})</>}
+                  {product.color && <> · цвет: {product.color}</>}
+                </>
+              ) : (
+                <>У товара не указан вес — расход сырья не посчитать. Укажите вес на странице «Товары».</>
+              )}
+            </p>
+          )}
+
+          {left > 0 && product && !spunbond && (
             <p className="text-[12.5px] text-muted">
               {preview?.roll_norm ? (
                 <>

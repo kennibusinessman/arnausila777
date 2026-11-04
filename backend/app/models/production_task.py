@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import ProductionTaskStatus
+from app.core.enums import ProductionTaskKind, ProductionTaskStatus
 from app.models.base import Base, TimestampMixin, UUIDMixin, str_enum
 
 if TYPE_CHECKING:
@@ -26,6 +26,13 @@ class ProductionTask(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "production_tasks"
     __table_args__ = (Index("ix_production_tasks_status_position", "status", "position"),)
 
+    # Своя очередь у каждой линии: position считается внутри kind.
+    kind: Mapped[ProductionTaskKind] = mapped_column(
+        str_enum(ProductionTaskKind),
+        default=ProductionTaskKind.SHEETS,
+        server_default=text("'SHEETS'"),
+        index=True,
+    )
     position: Mapped[int] = mapped_column(Integer)
     # Для кого делаем — клиент из справочника. NULL — на склад, без клиента.
     client_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clients.id"), index=True)

@@ -20,10 +20,15 @@ const SHORT_LABEL: Record<string, string> = {
   "/inventory": "Инвент.",
 };
 
+/** Разделы, которые на телефоне всегда уходят в «Ещё» (первыми в списке), не занимая вкладку. */
+const MOBILE_IN_MORE = new Set(["/production-plan"]);
+
 export function BottomNav() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
-  const items = visibleNavItems(user);
+  const visible = visibleNavItems(user);
+  const demoted = visible.filter((i) => MOBILE_IN_MORE.has(i.href));
+  const primary = visible.filter((i) => !MOBILE_IN_MORE.has(i.href));
   const [sheetOpen, setSheetOpen] = useState(false);
 
   // Закрываем лист «Ещё» при переходе на другую страницу.
@@ -33,9 +38,9 @@ export function BottomNav() {
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
-  const useMore = items.length > 5;
-  const tabs = useMore ? items.slice(0, MAX_TABS) : items.slice(0, 5);
-  const overflow = useMore ? items.slice(MAX_TABS) : [];
+  const useMore = visible.length > 5 || demoted.length > 0;
+  const tabs = useMore ? primary.slice(0, MAX_TABS) : primary;
+  const overflow = useMore ? [...demoted, ...primary.slice(MAX_TABS)] : [];
   const overflowActive = overflow.some((i) => isActive(i.href));
 
   return (

@@ -3,14 +3,19 @@ import type {
   PlanProductOption,
   PlanResponse,
   PlanSettings,
+  ProductionTaskKind,
+  SpunbondPlanResponse,
+  SpunbondSettings,
   TaskCreate,
   TaskUpdate,
 } from "@/lib/types/productionPlan";
 
 export const getPlan = () => http.get<PlanResponse>("/production-plan");
 
-export const getPlanOptions = () =>
-  http.get<{ products: PlanProductOption[] }>("/production-plan/options");
+export const getPlanOptions = (kind: ProductionTaskKind = "SHEETS") =>
+  http.get<{ products: PlanProductOption[] }>(
+    kind === "SPUNBOND" ? "/production-plan/spunbond/options" : "/production-plan/options"
+  );
 
 export const createTask = (data: TaskCreate) => http.post<PlanResponse>("/production-plan/tasks", data);
 
@@ -35,3 +40,13 @@ export const reorderTasks = (ids: string[]) => http.post<PlanResponse>("/product
 
 export const updatePlanSettings = (data: PlanSettings) =>
   http.put<PlanResponse>("/production-plan/settings", data);
+
+// --- Спанбонд ---
+
+export const getSpunbondPlan = () => http.get<SpunbondPlanResponse>("/production-plan/spunbond");
+
+export const reorderSpunbond = (ids: string[]) =>
+  http.post<SpunbondPlanResponse>("/production-plan/spunbond/reorder", { ids });
+
+export const updateSpunbondSettings = (data: SpunbondSettings) =>
+  http.put<SpunbondPlanResponse>("/production-plan/spunbond/settings", data);

@@ -38,6 +38,14 @@ class ProductionTaskStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class ProductionTaskKind(str, Enum):
+    """Какая линия делает задание: SHEETS — простыни (из бабин), SPUNBOND —
+    спанбонд (рулоны и бабины из полипропилена). У каждой своя очередь."""
+
+    SHEETS = "SHEETS"
+    SPUNBOND = "SPUNBOND"
+
+
 class WarehouseType(str, Enum):
     RAW_MATERIALS = "RAW_MATERIALS"
     FINISHED_GOODS = "FINISHED_GOODS"

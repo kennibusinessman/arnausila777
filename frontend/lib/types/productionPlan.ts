@@ -8,6 +8,12 @@ export const ProductionTaskStatus = {
 } as const;
 export type ProductionTaskStatus = (typeof ProductionTaskStatus)[keyof typeof ProductionTaskStatus];
 
+/** Линия: простыни (из бабин) или спанбонд (из полипропилена). У каждой своя очередь. */
+export type ProductionTaskKind = "SHEETS" | "SPUNBOND";
+
+/** Спанбонд: хватит ли полипропилена с учётом позиций выше; no_weight — у товара нет веса. */
+export type RawStatus = "ok" | "partial" | "none" | "no_weight" | "done";
+
 /** ok — бабин хватает, partial — частично, none — нет, no_norm — нет нормы/бабины, done — всё закреплено. */
 export type BobbinStatus = "ok" | "partial" | "none" | "no_norm" | "done";
 
@@ -47,10 +53,17 @@ export interface ItemRow {
   leftover_sheets: number | null;
   shifts_needed: string | null;
   eta: string | null;
+  // --- только спанбонд ---
+  color?: string | null;
+  /** Кг полипропилена на оставшееся; null — нет веса. */
+  kg_needed?: string | null;
+  raw_status?: RawStatus | null;
+  raw_short_kg?: string | null;
 }
 
 export interface TaskRow {
   id: string;
+  kind: ProductionTaskKind;
   position: number;
   status: ProductionTaskStatus;
   client_id: string | null;
@@ -73,6 +86,8 @@ export interface BobbinUse {
   /** Номер задания в очереди (1 — первое). */
   queue_no: number;
   client_name: string | null;
+  /** Комментарий задания: у одного клиента бывает несколько (склад, другое ТОО…). */
+  comment?: string | null;
   product_name: string;
   /** Сколько простыней осталось сделать. */
   sheets: number;
@@ -136,6 +151,10 @@ export interface PlanBobbinOption {
   name: string;
   roll_norm: number | null;
   on_stock: string;
+  /** Штук ушло по утверждённым сменным отчётам. */
+  used?: string;
+  /** Сколько раз выбирали вручную в заданиях. */
+  chosen?: number;
 }
 
 export interface PlanProductOption {
@@ -143,6 +162,12 @@ export interface PlanProductOption {
   name: string;
   unit: string;
   bobbins: PlanBobbinOption[];
+  // спанбонд
+  subcategory?: string | null;
+  color?: string | null;
+  /** Кг сырья на единицу; null — у товара в штуках нет веса. */
+  kg_per_unit?: string | null;
+  on_stock?: string | null;
 }
 
 export interface TaskItemIn {
@@ -156,6 +181,7 @@ export interface TaskItemIn {
 }
 
 export interface TaskCreate {
+  kind?: ProductionTaskKind;
   client_id?: string | null;
   deadline?: string | null;
   comment?: string | null;
@@ -165,3 +191,59 @@ export interface TaskCreate {
 export type TaskUpdate = Partial<TaskCreate> & {
   status?: ProductionTaskStatus;
 };
+
+// --- План спанбонда (backend/app/services/spunbond_plan_service.py) ---
+
+export interface SpunbondSettings {
+  kg_per_shift: number;
+  shifts_per_day: number;
+}
+
+/** Строка общего плана по цветам: позиция очереди спанбонда или бабины для простыней. */
+export interface ColorEntry {
+  source: "queue" | "sheets";
+  task_id: string;
+  item_id: string;
+  queue_no: number;
+  client_name: string | null;
+  comment?: string | null;
+  product_name: string;
+  quantity: number;
+  unit: string;
+  kg: string | null;
+  eta: string | null;
+  deadline: string | null;
+  late: boolean;
+  /** Для бабин: простыня, под которую они нужны. */
+  for_product: string | null;
+}
+
+export interface ColorPlan {
+  color: string | null;
+  kg: string;
+  queue_kg: string;
+  sheets_kg: string;
+  no_weight: number;
+  entries: ColorEntry[];
+}
+
+export interface RawStock {
+  material_id: string;
+  name: string;
+  on_stock: string;
+}
+
+export interface SpunbondPlanResponse {
+  settings: SpunbondSettings;
+  tasks: TaskRow[];
+  colors: ColorPlan[];
+  offers: Offer[];
+  raw: RawStock[];
+  raw_on_stock: string;
+  queue_kg: string;
+  sheets_kg: string;
+  raw_short: string;
+  no_weight: number;
+  total_shifts: string;
+  finish_date: string | null;
+}

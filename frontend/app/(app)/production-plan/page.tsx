@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { QuantityModal, type QtyAction } from "@/components/productionPlan/QuantityModal";
+import { SpunbondPlan } from "@/components/productionPlan/SpunbondPlan";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -32,7 +34,6 @@ import { useCan } from "@/lib/auth/permissions";
 import {
   useDeleteTask,
   useMarkReady,
-  useMarkShipped,
   useProductionPlan,
   useReorderTasks,
   useUpdatePlanSettings,
@@ -100,7 +101,64 @@ function saveDismissed(keys: string[]) {
 
 const pcs = (n: number | string) => `${formatNumber(n)} шт`;
 
+type PlanLine = "SHEETS" | "SPUNBOND";
+
+const LINES: { key: PlanLine; label: string; hint: string }[] = [
+  { key: "SHEETS", label: "Простыни", hint: "из бабин" },
+  { key: "SPUNBOND", label: "Спанбонд", hint: "из полипропилена" },
+];
+
+const LINE_KEY = "production-plan:line";
+
+/** Страница плана: сначала выбираем линию — простыни или спанбонд. Выбор помним в браузере. */
 export default function ProductionPlanPage() {
+  const [line, setLine] = useState<PlanLine>("SHEETS");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LINE_KEY);
+      if (saved === "SHEETS" || saved === "SPUNBOND") setLine(saved);
+    } catch {
+      /* приватный режим — по умолчанию простыни */
+    }
+  }, []);
+
+  function choose(next: PlanLine) {
+    setLine(next);
+    try {
+      localStorage.setItem(LINE_KEY, next);
+    } catch {
+      /* не запомним — не страшно */
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-white/60 p-1 sm:inline-grid sm:w-auto sm:self-start" role="tablist" aria-label="Линия">
+        {LINES.map((l) => (
+          <button
+            key={l.key}
+            type="button"
+            role="tab"
+            aria-selected={line === l.key}
+            onClick={() => choose(l.key)}
+            className={clsx(
+              "flex flex-col items-center rounded-xl px-5 py-2 transition-colors sm:min-w-[160px]",
+              line === l.key ? "bg-primary text-white shadow-sm" : "text-muted hover:bg-white hover:text-text"
+            )}
+          >
+            <span className="text-[14px] font-bold">{l.label}</span>
+            <span className={clsx("text-[11.5px]", line === l.key ? "text-white/80" : "text-muted")}>{l.hint}</span>
+          </button>
+        ))}
+      </div>
+      {line === "SHEETS" ? <SheetsPlan /> : <SpunbondPlan />}
+    </div>
+  );
+}
+
+/** План простыней: очередь заданий, бабины, отгрузки. */
+function SheetsPlan() {
   const canManage = useCan(Permission.PRODUCTION_PLAN_MANAGE);
   const plan = useProductionPlan(canManage);
   const updateTask = useUpdateTask();
@@ -389,7 +447,9 @@ export default function ProductionPlanPage() {
         </Card>
       )}
 
-      <TaskFormModal open={formOpen} onClose={() => setFormOpen(false)} task={editing} settings={data.settings} />
+      <TaskFormModal open={formOpen} onClose={() => setFormOpen(false)} task={editing}
+        perShift={data.settings.sheets_per_shift}
+      />
       <QuantityModal action={qtyAction} onClose={() => setQtyAction(null)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={data.settings} />
     </div>
@@ -464,27 +524,6 @@ function TaskCard({
       )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
-        <div className="flex shrink-0 items-center">
-          <button
-            type="button"
-            onClick={() => onMove(index, -1)}
-            disabled={busy || index === 0}
-            className="rounded-lg p-1 text-muted hover:bg-primary-50 hover:text-primary disabled:opacity-30"
-            aria-label="Выше"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(index, 1)}
-            disabled={busy || isLast}
-            className="rounded-lg p-1 text-muted hover:bg-primary-50 hover:text-primary disabled:opacity-30"
-            aria-label="Ниже"
-          >
-            <ArrowDown className="h-4 w-4" />
-          </button>
-        </div>
-
         <button
           type="button"
           onClick={onToggle}
@@ -494,7 +533,10 @@ function TaskCard({
           <span className="flex min-w-0 flex-1 basis-48 items-center gap-2">
             <span className="w-6 shrink-0 text-[13px] font-bold tabular-nums text-muted">{index + 1}</span>
             <span className="min-w-0">
-              <span className="block truncate text-[14px] font-bold text-text">{t.client_name || "Без клиента"}</span>
+              <span className="block truncate text-[14px] font-bold text-text" title={t.comment ?? undefined}>
+                {t.client_name || "Без клиента"}
+                {t.comment && <span className="font-semibold text-primary"> — {t.comment}</span>}
+              </span>
               <span className="block truncate text-[12px] text-muted">{names}</span>
             </span>
           </span>
@@ -529,8 +571,15 @@ function TaskCard({
               <ItemLine key={i.id} item={i} onReady={() => onReady(i)} onShip={() => onShip(i)} />
             ))}
           </div>
-          {t.comment && <p className="mt-2 text-[12.5px] text-muted">{t.comment}</p>}
-          <div className="mt-2.5 flex flex-wrap justify-end gap-1.5">
+          <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
+            <span className="mr-auto flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={() => onMove(index, -1)} disabled={busy || index === 0}>
+                <ArrowUp className="h-3.5 w-3.5" /> Выше
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => onMove(index, 1)} disabled={busy || isLast}>
+                <ArrowDown className="h-3.5 w-3.5" /> Ниже
+              </Button>
+            </span>
             <Button variant="ghost" size="sm" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" /> Изменить
             </Button>
@@ -675,8 +724,8 @@ interface BobbinGroup {
   title: string;
   subtitle: string;
   needed: number;
-  /** На складе — только там, где группа = конкретные бабины (цвет, наименование). */
-  onStock: number | null;
+  /** Бабин на складе — по всем бабинам группы. */
+  onStock: number;
   short: number;
   rows: UseRow[];
 }
@@ -730,10 +779,14 @@ function buildGroups(bobbins: BobbinNeed[], sort: BobbinSort): BobbinGroup[] {
   for (const r of [...rows].sort(byQueue)) tasks.set(r.task_id, [...(tasks.get(r.task_id) ?? []), r]);
   return [...tasks.entries()].map(([taskId, rs]) => ({
     key: `task:${taskId}`,
-    title: `№${rs[0]!.queue_no} · ${rs[0]!.client_name || "Без клиента"}`,
+    title: `№${rs[0]!.queue_no} · ${rs[0]!.client_name || "Без клиента"}${rs[0]!.comment ? ` — ${rs[0]!.comment}` : ""}`,
     subtitle: [...new Set(rs.map((r) => r.product_name))].join(", "),
     needed: sumBy(rs, (r) => r.needed),
-    onStock: null,
+    // Склад общий для всей очереди: показываем, сколько этих бабин лежит сейчас.
+    onStock: [...new Map(rs.map((r) => [r.bobbin.bobbin_id, Number(r.bobbin.on_stock)])).values()].reduce(
+      (a, b) => a + b,
+      0
+    ),
     short: sumBy(rs, (r) => r.short),
     rows: rs,
   }));
@@ -820,14 +873,12 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
                 <span className="tabular-nums">
                   нужно бабин <b>{formatNumber(g.needed)}</b>
                 </span>
-                {g.onStock !== null && (
-                  <span className="tabular-nums">
-                    на складе <b>{formatNumber(g.onStock, 0)}</b>
-                  </span>
-                )}
+                <span className="tabular-nums">
+                  на складе <b>{formatNumber(g.onStock, 0)}</b>
+                </span>
                 {g.short > 0 ? (
                   <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
-                    {g.onStock === null ? "не хватает" : "докупить"} {formatNumber(g.short)}
+                    {sort === "clients" ? "не хватает" : "докупить"} {formatNumber(g.short)}
                   </span>
                 ) : (
                   <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">хватает</span>
@@ -837,7 +888,10 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
 
               {!isOpen && shortRows.length > 0 && sort !== "clients" && (
                 <p className="-mt-1 px-3.5 pb-2.5 text-[12px] text-danger">
-                  не хватит: {shortRows.map((r) => `№${r.queue_no} ${r.client_name || "без клиента"}`).join(", ")}
+                  не хватит:{" "}
+                  {shortRows
+                    .map((r) => `№${r.queue_no} ${r.client_name || "без клиента"}${r.comment ? ` (${r.comment})` : ""}`)
+                    .join(", ")}
                 </p>
               )}
 
@@ -879,11 +933,13 @@ function UseLine({ row: r, showClient, onClick }: { row: UseRow; showClient: boo
         {showClient && (
           <span className="block text-[12px] font-semibold text-muted">
             №{r.queue_no} · {r.client_name || "Без клиента"}
+            {r.comment && <span className="text-primary"> — {r.comment}</span>}
           </span>
         )}
         <span className="block text-text">
           <span className="text-muted">Нужно:</span> {r.product_name} — <b>{pcs(r.sheets)}</b>, {r.bobbin.name} —{" "}
           <b>{pcs(r.needed)}</b>
+          <span className="text-muted"> · на складе {formatNumber(r.bobbin.on_stock, 0)}</span>
         </span>
         {r.leftover_sheets > 0 && (
           <span className="block text-[12px] text-muted">
@@ -907,91 +963,6 @@ function UseLine({ row: r, showClient, onClick }: { row: UseRow; showClient: boo
         )}
       </span>
     </button>
-  );
-}
-
-interface QtyAction {
-  kind: "ready" | "ship";
-  task: TaskRow;
-  item: ItemRow;
-}
-
-/** «Готово» / «Отгрузить»: сколько штук отметить по позиции. */
-function QuantityModal({ action, onClose }: { action: QtyAction | null; onClose: () => void }) {
-  const markReady = useMarkReady();
-  const markShipped = useMarkShipped();
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const max = action ? (action.kind === "ready" ? action.item.remaining : action.item.awaiting_shipment) : 0;
-  useEffect(() => {
-    if (!action) return;
-    setValue(String(max));
-    setError(null);
-  }, [action, max]);
-
-  if (!action) return null;
-  const { task, item } = action;
-  const ready = action.kind === "ready";
-  const who = task.client_name ? `«${task.client_name}»` : "задания";
-
-  function submit() {
-    if (!action) return;
-    const n = Number(value);
-    if (!Number.isInteger(n) || n <= 0) return setError("Целое число больше нуля");
-    if (n > max) return setError(`Не больше ${pcs(max)}`);
-    const vars = { taskId: action.task.id, itemId: action.item.id, quantity: n };
-    const opts = {
-      onSuccess: onClose,
-      onError: (err: unknown) => setError(apiErrorMessage(err, "Не удалось сохранить")),
-    };
-    if (action.kind === "ready") markReady.mutate(vars, opts);
-    else markShipped.mutate(vars, opts);
-  }
-
-  const pending = markReady.isPending || markShipped.isPending;
-
-  return (
-    <Modal open onClose={onClose} title={ready ? "Готово для клиента" : "Отгрузка клиенту"} size="md">
-      <div className="flex flex-col gap-4">
-        <p className="text-[13.5px] text-text">
-          {ready ? (
-            <>
-              Сколько готовых простыней «{item.product_name}» отложить для {who}? Они закрепятся за клиентом и
-              перестанут считаться свободными на складе.
-            </>
-          ) : (
-            <>
-              Сколько простыней «{item.product_name}» отгрузили для {who}? Это ручная отметка — склад и долг
-              клиента она не меняет. Если оформить отгрузку заказом на странице «Заказы», она засчитается сюда
-              сама и спишется со склада.
-            </>
-          )}
-        </p>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-semibold text-text">Штук (можно до {pcs(max)})</label>
-          <input
-            type="number"
-            min="1"
-            max={max}
-            step="1"
-            inputMode="numeric"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-full rounded-xl border-[1.5px] border-border bg-white/80 px-3 py-2 text-sm outline-none focus:border-primary/50"
-          />
-        </div>
-        {error && <p className="rounded-lg bg-danger-bg px-3 py-2 text-[13px] text-danger">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Отмена
-          </Button>
-          <Button variant={ready ? "primary" : "success"} onClick={submit} disabled={pending}>
-            {pending ? "Сохранение…" : ready ? "Отметить готово" : "Отметить отгрузку"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

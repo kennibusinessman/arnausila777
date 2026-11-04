@@ -1,4 +1,4 @@
-"""Схемы плана производства простыней."""
+"""Схемы плана производства: простыни и спанбонд."""
 from __future__ import annotations
 
 import uuid
@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.core.enums import ProductionTaskStatus
+from app.core.enums import ProductionTaskKind, ProductionTaskStatus
 
 
 class TaskItemIn(BaseModel):
@@ -24,6 +24,8 @@ class TaskItemIn(BaseModel):
 
 
 class TaskCreate(BaseModel):
+    # Линия: простыни (по умолчанию) или спанбонд. После создания не меняется.
+    kind: ProductionTaskKind = ProductionTaskKind.SHEETS
     client_id: uuid.UUID | None = None
     deadline: date | None = None
     comment: str | None = None
@@ -95,10 +97,20 @@ class ItemRow(BaseModel):
     leftover_sheets: int | None = None
     shifts_needed: Decimal | None = None
     eta: date | None = None
+    # --- Только спанбонд ---
+    # Цвет из названия; None — не распознан.
+    color: str | None = None
+    # Сколько кг полипропилена нужно на оставшееся (1 кг сырья = 1 кг продукции);
+    # None — у товара в штуках не указан вес.
+    kg_needed: Decimal | None = None
+    # ok / partial / none — хватит ли полипропилена с учётом позиций выше; no_weight — нет веса.
+    raw_status: str | None = None
+    raw_short_kg: Decimal | None = None
 
 
 class TaskRow(BaseModel):
     id: uuid.UUID
+    kind: ProductionTaskKind = ProductionTaskKind.SHEETS
     position: int
     status: ProductionTaskStatus
     client_id: uuid.UUID | None
@@ -127,6 +139,8 @@ class BobbinUse(BaseModel):
     # Номер задания в очереди (1 — первое), как на странице.
     queue_no: int
     client_name: str | None
+    # Комментарий задания — у одного клиента бывает несколько (склад, другое ТОО…).
+    comment: str | None = None
     product_name: str
     # Сколько простыней осталось сделать по позиции.
     sheets: int
@@ -190,6 +204,10 @@ class PlanBobbinOption(BaseModel):
     name: str
     roll_norm: int | None
     on_stock: Decimal
+    # Популярность: штук ушло по утверждённым сменным отчётам и сколько раз
+    # выбирали вручную в заданиях. По ней подбирается бабина по умолчанию.
+    used: Decimal = Decimal(0)
+    chosen: int = 0
 
 
 class PlanProductOption(BaseModel):
@@ -197,9 +215,81 @@ class PlanProductOption(BaseModel):
     name: str
     unit: str
     bobbins: list[PlanBobbinOption]
+    # Для спанбонда: подкатегория, цвет и кг сырья на единицу (None — нет веса).
+    subcategory: str | None = None
+    color: str | None = None
+    kg_per_unit: Decimal | None = None
+    on_stock: Decimal | None = None
 
 
 class PlanOptions(BaseModel):
     """Справочник для формы: наименования и привязанные к ним бабины."""
 
     products: list[PlanProductOption]
+
+
+# ---------------------------------------------------------------------------
+# План спанбонда
+# ---------------------------------------------------------------------------
+
+
+class SpunbondSettings(BaseModel):
+    kg_per_shift: int = Field(gt=0)
+    shifts_per_day: int = Field(gt=0, le=3)
+
+
+class ColorEntry(BaseModel):
+    """Строка общего плана по цветам.
+
+    source = "queue" — позиция очереди спанбонда; "sheets" — бабины, которых не
+    хватает плану простыней и которые ещё не поставлены в очередь спанбонда.
+    """
+
+    source: str
+    task_id: uuid.UUID
+    item_id: uuid.UUID
+    queue_no: int
+    client_name: str | None
+    comment: str | None = None
+    product_name: str
+    quantity: int
+    unit: str
+    kg: Decimal | None
+    eta: date | None = None
+    deadline: date | None = None
+    late: bool = False
+    # Для source="sheets": простыня, под которую нужны бабины.
+    for_product: str | None = None
+
+
+class ColorPlan(BaseModel):
+    color: str | None
+    # Всего кг по цвету (без строк, где вес неизвестен).
+    kg: Decimal
+    queue_kg: Decimal
+    sheets_kg: Decimal
+    no_weight: int
+    entries: list[ColorEntry]
+
+
+class RawStock(BaseModel):
+    material_id: uuid.UUID
+    name: str
+    on_stock: Decimal
+
+
+class SpunbondPlanResponse(BaseModel):
+    settings: SpunbondSettings
+    tasks: list[TaskRow]
+    colors: list[ColorPlan]
+    offers: list[Offer]
+    # Полипропилен на складе (все материалы с «полипроп» в названии).
+    raw: list[RawStock]
+    raw_on_stock: Decimal
+    # Нужно сырья: на очередь спанбонда и на бабины для простыней.
+    queue_kg: Decimal
+    sheets_kg: Decimal
+    raw_short: Decimal
+    no_weight: int
+    total_shifts: Decimal
+    finish_date: date | None

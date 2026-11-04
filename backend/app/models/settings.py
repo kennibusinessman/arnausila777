@@ -29,3 +29,10 @@ class Settings(TimestampMixin, Base):
         Integer, default=360, server_default=text("360")
     )
     shifts_per_day: Mapped[int] = mapped_column(Integer, default=2, server_default=text("2"))
+    # План спанбонда: выработка линии в кг продукции за смену и смен в сутки.
+    spunbond_kg_per_shift: Mapped[int] = mapped_column(
+        Integer, default=1000, server_default=text("1000")
+    )
+    spunbond_shifts_per_day: Mapped[int] = mapped_column(
+        Integer, default=2, server_default=text("2")
+    )

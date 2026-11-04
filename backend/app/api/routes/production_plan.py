@@ -1,4 +1,6 @@
-"""План производства простыней: /api/production-plan (только право production_plan.manage)."""
+"""План производства: /api/production-plan (простыни) и /api/production-plan/spunbond
+(только право production_plan.manage). Задания обеих линий правятся общими
+эндпоинтами /tasks — они возвращают план простыней, фронт перечитывает спанбонд."""
 from __future__ import annotations
 
 import uuid
@@ -8,6 +10,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import DbSession
 from app.core.access import Permission
+from app.core.enums import ProductionTaskKind
 from app.core.permissions import require_permissions
 from app.models import User
 from app.schemas.common import Message
@@ -17,10 +20,13 @@ from app.schemas.production_plan import (
     PlanSettings,
     QuantityRequest,
     ReorderRequest,
+    SpunbondPlanResponse,
+    SpunbondSettings,
     TaskCreate,
     TaskUpdate,
 )
 from app.services import production_plan_service as service
+from app.services import spunbond_plan_service as spunbond
 
 router = APIRouter(prefix="/production-plan", tags=["production-plan"])
 
@@ -86,3 +92,32 @@ async def reorder(data: ReorderRequest, actor: Manager, db: DbSession) -> PlanRe
 async def update_settings(data: PlanSettings, actor: Manager, db: DbSession) -> PlanResponse:
     await service.update_settings(db, data)
     return await service.build_plan(db)
+
+
+# --- Спанбонд -------------------------------------------------------------
+
+
+@router.get("/spunbond", response_model=SpunbondPlanResponse)
+async def get_spunbond_plan(actor: Manager, db: DbSession) -> SpunbondPlanResponse:
+    return await spunbond.build(db)
+
+
+@router.get("/spunbond/options", response_model=PlanOptions)
+async def get_spunbond_options(actor: Manager, db: DbSession) -> PlanOptions:
+    return await spunbond.options(db)
+
+
+@router.post("/spunbond/reorder", response_model=SpunbondPlanResponse)
+async def reorder_spunbond(
+    data: ReorderRequest, actor: Manager, db: DbSession
+) -> SpunbondPlanResponse:
+    await service.reorder(db, data.ids, ProductionTaskKind.SPUNBOND)
+    return await spunbond.build(db)
+
+
+@router.put("/spunbond/settings", response_model=SpunbondPlanResponse)
+async def update_spunbond_settings(
+    data: SpunbondSettings, actor: Manager, db: DbSession
+) -> SpunbondPlanResponse:
+    await spunbond.update_settings(db, data)
+    return await spunbond.build(db)

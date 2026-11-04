@@ -1,5 +1,9 @@
 """План производства простыней: очередь заданий, расход бабин, сроки, свободный остаток.
 
+Общие операции с заданиями (создать, править, готово/отгружено, связь с заказами)
+служат обеим линиям — простыням и спанбонду (`ProductionTask.kind`). Расчёт
+плана спанбонда — в spunbond_plan_service.
+
 Задание — для одного клиента, в нём несколько позиций (наименование + штуки).
 У позиции три числа: заказано, готово (отложено для клиента со склада) и
 отгружено. Отгружено складывается из заказов (заказ клиенту на странице
@@ -30,8 +34,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.catalog import guess_color, is_bobbin
-from app.core.enums import ItemType, ProductionTaskStatus
+from app.core.catalog import SPUNBOND_CATEGORY, guess_color, is_bobbin, norm
+from app.core.enums import ItemType, ProductionTaskKind, ProductionTaskStatus, ShiftReportStatus
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models import (
     Client,
@@ -40,6 +44,8 @@ from app.models import (
     ProductionTask,
     ProductionTaskItem,
     ProductionTaskShipment,
+    ShiftReport,
+    ShiftReportMaterial,
     StockBalance,
     User,
 )
@@ -81,13 +87,42 @@ async def _stock_by_product(db: AsyncSession) -> dict[uuid.UUID, Decimal]:
     return {pid: Decimal(qty or 0) for pid, qty in rows.all()}
 
 
+# Популярность бабины: (сколько штук ушло в утверждённых сменных отчётах,
+# сколько раз её выбирали вручную в заданиях).
+Usage = dict[uuid.UUID, tuple[Decimal, int]]
+
+
+async def _bobbin_usage(db: AsyncSession) -> Usage:
+    used = await db.execute(
+        select(ShiftReportMaterial.product_id, func.sum(ShiftReportMaterial.quantity_used))
+        .join(ShiftReport, ShiftReport.id == ShiftReportMaterial.shift_report_id)
+        .where(
+            ShiftReport.status == ShiftReportStatus.APPROVED,
+            ShiftReportMaterial.product_id.is_not(None),
+        )
+        .group_by(ShiftReportMaterial.product_id)
+    )
+    chosen = await db.execute(
+        select(ProductionTaskItem.bobbin_id, func.count())
+        .where(ProductionTaskItem.bobbin_id.is_not(None))
+        .group_by(ProductionTaskItem.bobbin_id)
+    )
+    usage: Usage = {pid: (Decimal(q or 0), 0) for pid, q in used.all()}
+    for bid, n in chosen.all():
+        usage[bid] = (usage.get(bid, (Decimal(0), 0))[0], int(n))
+    return usage
+
+
 def _pick_bobbin(
     item: ProductionTaskItem,
     by_target: dict[uuid.UUID, list[Product]],
     stock: dict[uuid.UUID, Decimal],
+    usage: Usage | None = None,
 ) -> Product | None:
-    """Бабина позиции, а если не выбрана — привязанная к наименованию:
-    сначала с нормой, из них та, которой больше на складе."""
+    """Бабина позиции, а если не выбрана — привязанная к наименованию: сначала с
+    нормой, из них самая популярная для этой простыни (больше всего ушло по
+    сменным отчётам, потом чаще выбирали в заданиях), при равенстве — у которой
+    больше на складе."""
     candidates = by_target.get(item.product_id, [])
     if item.bobbin_id is not None:
         for b in candidates:
@@ -95,9 +130,15 @@ def _pick_bobbin(
                 return b
     if not candidates:
         return None
+    usage = usage or {}
     return max(
         candidates,
-        key=lambda b: (b.roll_norm is not None, stock.get(b.id, Decimal(0)), b.name),
+        key=lambda b: (
+            b.roll_norm is not None,
+            usage.get(b.id, (Decimal(0), 0)),
+            stock.get(b.id, Decimal(0)),
+            b.name,
+        ),
     )
 
 
@@ -113,6 +154,7 @@ async def _bobbin_index(db: AsyncSession) -> dict[uuid.UUID, list[Product]]:
 async def options(db: AsyncSession) -> PlanOptions:
     by_target = await _bobbin_index(db)
     stock = await _stock_by_product(db)
+    usage = await _bobbin_usage(db)
     products = (
         await db.execute(
             select(Product).where(Product.id.in_(by_target), Product.deleted_at.is_(None))
@@ -130,6 +172,8 @@ async def options(db: AsyncSession) -> PlanOptions:
                         name=b.name,
                         roll_norm=b.roll_norm,
                         on_stock=stock.get(b.id, Decimal(0)),
+                        used=usage.get(b.id, (Decimal(0), 0))[0],
+                        chosen=usage.get(b.id, (Decimal(0), 0))[1],
                     )
                     for b in by_target[p.id]
                 ],
@@ -139,13 +183,30 @@ async def options(db: AsyncSession) -> PlanOptions:
     )
 
 
-async def _active_tasks(db: AsyncSession) -> list[ProductionTask]:
+async def _active_tasks(
+    db: AsyncSession, kind: ProductionTaskKind | None = None
+) -> list[ProductionTask]:
+    """Активные задания по очереди; kind=None — обе линии (для склада и заказов)."""
+    query = select(ProductionTask).where(ProductionTask.status.in_(ACTIVE))
+    if kind is not None:
+        query = query.where(ProductionTask.kind == kind)
+    return list(
+        (
+            await db.execute(
+                query.order_by(ProductionTask.position.asc(), ProductionTask.created_at.asc())
+            )
+        ).scalars().all()
+    )
+
+
+async def _closed_tasks(db: AsyncSession, kind: ProductionTaskKind) -> list[ProductionTask]:
     return list(
         (
             await db.execute(
                 select(ProductionTask)
-                .where(ProductionTask.status.in_(ACTIVE))
-                .order_by(ProductionTask.position.asc(), ProductionTask.created_at.asc())
+                .where(ProductionTask.status.not_in(ACTIVE), ProductionTask.kind == kind)
+                .order_by(ProductionTask.updated_at.desc())
+                .limit(CLOSED_LIMIT)
             )
         ).scalars().all()
     )
@@ -165,34 +226,23 @@ def _free_stock(
     return {pid: (stock.get(pid, Decimal(0)), r) for pid, r in reserved.items()}
 
 
-async def build_plan(db: AsyncSession, today: date | None = None) -> PlanResponse:
-    today = today or date.today()
-    cfg = await settings_service.get_settings(db)
-    per_shift = Decimal(cfg.sheets_per_shift)
-    per_day = Decimal(cfg.sheets_per_shift * cfg.shifts_per_day)
-
-    active = await _active_tasks(db)
-    closed = list(
-        (
-            await db.execute(
-                select(ProductionTask)
-                .where(ProductionTask.status.not_in(ACTIVE))
-                .order_by(ProductionTask.updated_at.desc())
-                .limit(CLOSED_LIMIT)
-            )
-        ).scalars().all()
-    )
-    ids = {i.product_id for t in active + closed for i in t.items}
-    names = {
-        p.id: p
-        for p in (await db.execute(select(Product).where(Product.id.in_(ids)))).scalars().all()
-    }
-    client_ids = {t.client_id for t in active + closed if t.client_id is not None}
+async def _load_context(
+    db: AsyncSession, tasks: list[ProductionTask]
+) -> tuple[dict[uuid.UUID, Product], dict[uuid.UUID, str], dict[uuid.UUID, list[ItemOrder]]]:
+    """Товары, имена клиентов и засчитанные заказы для строк заданий."""
+    ids = {i.product_id for t in tasks for i in t.items}
+    names: dict[uuid.UUID, Product] = {}
+    if ids:
+        names = {
+            p.id: p
+            for p in (await db.execute(select(Product).where(Product.id.in_(ids)))).scalars().all()
+        }
+    client_ids = {t.client_id for t in tasks if t.client_id is not None}
     clients: dict[uuid.UUID, str] = {}
     if client_ids:
         found = await db.execute(select(Client).where(Client.id.in_(client_ids)))
         clients = {c.id: c.name for c in found.scalars().all()}
-    item_ids = [i.id for t in active + closed for i in t.items]
+    item_ids = [i.id for t in tasks for i in t.items]
     orders_by_item: dict[uuid.UUID, list[ItemOrder]] = {}
     if item_ids:
         linked = await db.execute(
@@ -205,8 +255,126 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
             orders_by_item.setdefault(link.item_id, []).append(
                 ItemOrder(order_id=link.order_id, order_number=number, quantity=link.quantity)
             )
+    return names, clients, orders_by_item
+
+
+def _item_row(
+    i: ProductionTaskItem,
+    names: dict[uuid.UUID, Product],
+    orders_by_item: dict[uuid.UUID, list[ItemOrder]],
+    bobbin: Product | None = None,
+) -> ItemRow:
+    product = names.get(i.product_id)
+    return ItemRow(
+        id=i.id,
+        line_no=i.line_no,
+        product_id=i.product_id,
+        product_name=product.name if product else "—",
+        unit=product.unit if product else "шт",
+        bobbin_id=i.bobbin_id,
+        plan_bobbin_id=bobbin.id if bobbin else None,
+        plan_bobbin_name=bobbin.name if bobbin else None,
+        roll_norm=bobbin.roll_norm if bobbin else None,
+        quantity=i.quantity,
+        ready=i.ready,
+        shipped=i.shipped,
+        remaining=max(i.quantity - i.ready, 0),
+        awaiting_shipment=max(i.ready - i.shipped, 0),
+        orders=orders_by_item.get(i.id, []),
+    )
+
+
+def _task_row(t: ProductionTask, items: list[ItemRow], clients: dict[uuid.UUID, str]) -> TaskRow:
+    etas = [r.eta for r in items if r.eta is not None]
+    eta = max(etas) if etas else None
+    return TaskRow(
+        id=t.id,
+        kind=t.kind,
+        position=t.position,
+        status=t.status,
+        client_id=t.client_id,
+        client_name=clients.get(t.client_id) if t.client_id else None,
+        deadline=t.deadline,
+        comment=t.comment,
+        items=items,
+        quantity=sum(r.quantity for r in items),
+        ready=sum(r.ready for r in items),
+        shipped=sum(r.shipped for r in items),
+        remaining=sum(r.remaining for r in items),
+        eta=eta,
+        late=t.deadline is not None and eta is not None and eta > t.deadline,
+    )
+
+
+def _free_and_offers(
+    active: list[ProductionTask],
+    rows: list[TaskRow],
+    free_all: dict[uuid.UUID, tuple[Decimal, int]],
+    names: dict[uuid.UUID, Product],
+) -> tuple[list[FreeStock], list[Offer]]:
+    """Свободный остаток по наименованиям очереди и предложения «передать клиенту»:
+    первая по очереди позиция с этим наименованием получает свободное."""
+    free_rows: list[FreeStock] = []
+    offers: list[Offer] = []
+    active_rows = [r for r in rows if r.status in ACTIVE]
+    for pid in {i.product_id for t in active for i in t.items}:
+        on_stock, reserved = free_all[pid]
+        free = on_stock - reserved
+        product = names.get(pid)
+        free_rows.append(
+            FreeStock(
+                product_id=pid,
+                product_name=product.name if product else "—",
+                on_stock=on_stock,
+                reserved=reserved,
+                free=free,
+            )
+        )
+        whole = int(free) if free > 0 else 0
+        if whole <= 0:
+            continue
+        target = next(
+            (
+                (task, item)
+                for task in active_rows
+                for item in task.items
+                if item.product_id == pid and item.remaining > 0
+            ),
+            None,
+        )
+        if target is not None:
+            task, item = target
+            offers.append(
+                Offer(
+                    task_id=task.id,
+                    item_id=item.id,
+                    product_id=pid,
+                    product_name=item.product_name,
+                    client_id=task.client_id,
+                    client_name=task.client_name,
+                    free=free,
+                    quantity=min(whole, item.remaining),
+                )
+            )
+    free_rows.sort(key=lambda x: x.product_name)
+    return free_rows, offers
+
+
+async def build_plan(db: AsyncSession, today: date | None = None) -> PlanResponse:
+    today = today or date.today()
+    cfg = await settings_service.get_settings(db)
+    per_shift = Decimal(cfg.sheets_per_shift)
+    per_day = Decimal(cfg.sheets_per_shift * cfg.shifts_per_day)
+
+    active = await _active_tasks(db, ProductionTaskKind.SHEETS)
+    closed = await _closed_tasks(db, ProductionTaskKind.SHEETS)
+    # Готовое по заданиям спанбонда тоже лежит на складе для клиентов — свободный
+    # остаток считаем по всем активным заданиям.
+    all_active = await _active_tasks(db)
+    names, clients, orders_by_item = await _load_context(db, active + closed)
     by_target = await _bobbin_index(db)
     stock = await _stock_by_product(db)
+    usage = await _bobbin_usage(db)
 
     bobbin_used: dict[uuid.UUID, int] = {}
     bobbin_cards: dict[uuid.UUID, Product] = {}
@@ -214,51 +382,17 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
     cum_sheets = 0
 
     def item_row(i: ProductionTaskItem, bobbin: Product | None) -> ItemRow:
-        product = names.get(i.product_id)
-        return ItemRow(
-            id=i.id,
-            line_no=i.line_no,
-            product_id=i.product_id,
-            product_name=product.name if product else "—",
-            unit=product.unit if product else "шт",
-            bobbin_id=i.bobbin_id,
-            plan_bobbin_id=bobbin.id if bobbin else None,
-            plan_bobbin_name=bobbin.name if bobbin else None,
-            roll_norm=bobbin.roll_norm if bobbin else None,
-            quantity=i.quantity,
-            ready=i.ready,
-            shipped=i.shipped,
-            remaining=max(i.quantity - i.ready, 0),
-            awaiting_shipment=max(i.ready - i.shipped, 0),
-            orders=orders_by_item.get(i.id, []),
-        )
+        return _item_row(i, names, orders_by_item, bobbin)
 
     def task_row(t: ProductionTask, items: list[ItemRow]) -> TaskRow:
-        etas = [r.eta for r in items if r.eta is not None]
-        eta = max(etas) if etas else None
-        return TaskRow(
-            id=t.id,
-            position=t.position,
-            status=t.status,
-            client_id=t.client_id,
-            client_name=clients.get(t.client_id) if t.client_id else None,
-            deadline=t.deadline,
-            comment=t.comment,
-            items=items,
-            quantity=sum(r.quantity for r in items),
-            ready=sum(r.ready for r in items),
-            shipped=sum(r.shipped for r in items),
-            remaining=sum(r.remaining for r in items),
-            eta=eta,
-            late=t.deadline is not None and eta is not None and eta > t.deadline,
-        )
+        return _task_row(t, items, clients)
 
     rows: list[TaskRow] = []
     for queue_no, t in enumerate(active, start=1):
         client_name = clients.get(t.client_id) if t.client_id else None
         items: list[ItemRow] = []
         for i in t.items:
-            bobbin = _pick_bobbin(i, by_target, stock)
+            bobbin = _pick_bobbin(i, by_target, stock, usage)
             row = item_row(i, bobbin)
             items.append(row)
             if row.remaining == 0:
@@ -290,6 +424,7 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
                     item_id=i.id,
                     queue_no=queue_no,
                     client_name=client_name,
+                    comment=t.comment,
                     product_name=row.product_name,
                     sheets=row.remaining,
                     needed=need,
@@ -331,48 +466,7 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
         )
     bobbins.sort(key=lambda x: x.name)
 
-    free_rows: list[FreeStock] = []
-    offers: list[Offer] = []
-    active_rows = [r for r in rows if r.status in ACTIVE]
-    for pid, (on_stock, reserved) in _free_stock(active, stock).items():
-        free = on_stock - reserved
-        product = names.get(pid)
-        free_rows.append(
-            FreeStock(
-                product_id=pid,
-                product_name=product.name if product else "—",
-                on_stock=on_stock,
-                reserved=reserved,
-                free=free,
-            )
-        )
-        whole = int(free) if free > 0 else 0
-        if whole <= 0:
-            continue
-        target = next(
-            (
-                (task, item)
-                for task in active_rows
-                for item in task.items
-                if item.product_id == pid and item.remaining > 0
-            ),
-            None,
-        )
-        if target is not None:
-            task, item = target
-            offers.append(
-                Offer(
-                    task_id=task.id,
-                    item_id=item.id,
-                    product_id=pid,
-                    product_name=item.product_name,
-                    client_id=task.client_id,
-                    client_name=task.client_name,
-                    free=free,
-                    quantity=min(whole, item.remaining),
-                )
-            )
-    free_rows.sort(key=lambda x: x.product_name)
+    free_rows, offers = _free_and_offers(active, rows, _free_stock(all_active, stock), names)
 
     return PlanResponse(
         settings=PlanSettings(
@@ -407,11 +501,21 @@ def _get_item(task: ProductionTask, item_id: uuid.UUID) -> ProductionTaskItem:
 
 
 async def _check_refs(
-    db: AsyncSession, product_id: uuid.UUID, bobbin_id: uuid.UUID | None
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    bobbin_id: uuid.UUID | None,
+    kind: ProductionTaskKind = ProductionTaskKind.SHEETS,
 ) -> None:
     product = await db.get(Product, product_id)
     if product is None or product.deleted_at is not None:
         raise BadRequestError("Наименование не найдено")
+    if kind is ProductionTaskKind.SPUNBOND:
+        # Линия спанбонда делает только свою категорию — рулоны и бабины.
+        if norm(product.category) != norm(SPUNBOND_CATEGORY):
+            raise BadRequestError(f"«{product.name}» — не спанбонд")
+        if bobbin_id is not None:
+            raise BadRequestError("У спанбонда бабина в позиции не указывается")
+        return
     if is_bobbin(product.category, product.subcategory):
         raise BadRequestError("В задание ставится готовая продукция, а не бабина")
     if bobbin_id is None:
@@ -450,9 +554,11 @@ def _sync_status(task: ProductionTask) -> None:
         task.status = ProductionTaskStatus.IN_PROGRESS
 
 
-async def _next_position(db: AsyncSession) -> int:
+async def _next_position(db: AsyncSession, kind: ProductionTaskKind) -> int:
     current = await db.scalar(
-        select(func.max(ProductionTask.position)).where(ProductionTask.status.in_(ACTIVE))
+        select(func.max(ProductionTask.position)).where(
+            ProductionTask.status.in_(ACTIVE), ProductionTask.kind == kind
+        )
     )
     return (current or 0) + 1
 
@@ -468,7 +574,7 @@ async def create_task(db: AsyncSession, data: TaskCreate, actor: User) -> Produc
     await _check_client(db, data.client_id)
     items: list[ProductionTaskItem] = []
     for line_no, it in enumerate(data.items, start=1):
-        await _check_refs(db, it.product_id, it.bobbin_id)
+        await _check_refs(db, it.product_id, it.bobbin_id, data.kind)
         ready, shipped = it.ready or 0, it.shipped or 0
         _check_counts(it.quantity, ready, shipped)
         items.append(
@@ -482,10 +588,11 @@ async def create_task(db: AsyncSession, data: TaskCreate, actor: User) -> Produc
             )
         )
     task = ProductionTask(
+        kind=data.kind,
         client_id=data.client_id,
         deadline=data.deadline,
         comment=data.comment,
-        position=await _next_position(db),
+        position=await _next_position(db, data.kind),
         created_by=actor.id,
         items=items,
     )
@@ -498,7 +605,7 @@ async def create_task(db: AsyncSession, data: TaskCreate, actor: User) -> Produc
         action="CREATE_PRODUCTION_TASK",
         entity_type="ProductionTask",
         entity_id=task.id,
-        new={"client_id": task.client_id, "items": _audit_items(task)},
+        new={"kind": task.kind, "client_id": task.client_id, "items": _audit_items(task)},
     )
     await db.commit()
     return task
@@ -526,7 +633,7 @@ async def _replace_items(
         elif it.product_id != item.product_id and item.ready > 0:
             raise ConflictError("За позицией уже есть готовые штуки — наименование не поменять")
         if item.id is None or it.product_id != item.product_id or it.bobbin_id != item.bobbin_id:
-            await _check_refs(db, it.product_id, it.bobbin_id)
+            await _check_refs(db, it.product_id, it.bobbin_id, task.kind)
         ready = it.ready if it.ready is not None else item.ready
         shipped = it.shipped if it.shipped is not None else item.shipped
         _check_counts(it.quantity, ready, shipped)
@@ -553,7 +660,7 @@ async def update_task(
 
     status = payload.get("status")
     if status is not None and status in ACTIVE and task.status not in ACTIVE:
-        payload["position"] = await _next_position(db)  # вернули в работу — в конец очереди
+        payload["position"] = await _next_position(db, task.kind)  # вернули в работу — в конец очереди
     for key, value in payload.items():
         setattr(task, key, value)
     if status is None:
@@ -584,8 +691,12 @@ async def delete_task(db: AsyncSession, task_id: uuid.UUID, actor: User) -> None
     await db.commit()
 
 
-async def reorder(db: AsyncSession, ids: list[uuid.UUID]) -> None:
-    active = await _active_tasks(db)
+async def reorder(
+    db: AsyncSession,
+    ids: list[uuid.UUID],
+    kind: ProductionTaskKind = ProductionTaskKind.SHEETS,
+) -> None:
+    active = await _active_tasks(db, kind)
     if len(ids) != len(set(ids)) or set(ids) != {t.id for t in active}:
         raise ConflictError("Очередь изменилась — обновите страницу и повторите")
     by_id = {t.id: t for t in active}
