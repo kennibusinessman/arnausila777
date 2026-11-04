@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { GroupHeader, ItemHead, Segmented, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
+import { GroupHeader, ItemHead, Segmented, Swatch, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
 import { QuantityModal, type QtyAction, unitLabel } from "@/components/productionPlan/QuantityModal";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
 import { Button } from "@/components/ui/Button";
@@ -79,42 +79,6 @@ const STATUS_LABEL: Record<ProductionTaskStatus, string> = {
   DONE: "Отгружено",
   CANCELLED: "Отменено",
 };
-
-/** Плашка цвета рядом с названием. Неизвестный цвет — штриховка. */
-const SWATCH: Record<string, string> = {
-  Голубой: "#7cc4f0",
-  Бирюзовый: "#2ec4b6",
-  Синий: "#2f5fd0",
-  Белый: "#ffffff",
-  Зелёный: "#3aa15a",
-  Салатовый: "#a6dc5a",
-  Розовый: "#f39ac0",
-  Красный: "#e03e3e",
-  Бордовый: "#7d1f35",
-  Жёлтый: "#f5d33f",
-  Оранжевый: "#f39234",
-  Фиолетовый: "#7d4bc7",
-  Сиреневый: "#c3a2e6",
-  Серый: "#9aa0a8",
-  Чёрный: "#222222",
-  Бежевый: "#e8d6b5",
-  Коричневый: "#8a5a35",
-};
-
-function Swatch({ color }: { color: string | null | undefined }) {
-  const fill = color ? SWATCH[color] : undefined;
-  return (
-    <span
-      aria-hidden
-      className="inline-block h-4 w-4 shrink-0 rounded-full border border-black/15"
-      style={
-        fill
-          ? { background: fill }
-          : { background: "repeating-linear-gradient(45deg,#d7dbe2 0 3px,#f4f5f7 3px 6px)" }
-      }
-    />
-  );
-}
 
 const DISMISSED_KEY = "production-plan:spunbond:dismissed-offers";
 const offerKey = (o: Offer) => `${o.item_id}:${o.free}`;
