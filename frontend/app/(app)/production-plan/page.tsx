@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { GroupHeader, ItemHead, Segmented, Swatch, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
+import { GroupHeader, ItemHead, Segmented, shortList, Swatch, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
 import { QuantityModal, type QtyAction } from "@/components/productionPlan/QuantityModal";
 import { SpunbondPlan } from "@/components/productionPlan/SpunbondPlan";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
@@ -771,7 +771,6 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
       <div className="flex flex-col gap-2">
         {groups.map((g) => {
           const isOpen = open.has(g.key);
-          const shortRows = g.blocks.flatMap((b) => b.rows).filter((r) => r.short > 0);
           return (
             <div
               key={g.key}
@@ -780,7 +779,7 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
               <GroupHeader
                 lead={<Swatch color={g.color} />}
                 title={g.color ?? NO_COLOR}
-                subtitle={`для: ${g.clients.join(", ")}`}
+                subtitle={`для: ${shortList(g.clients)}`}
                 open={isOpen}
                 onToggle={() => toggle(g.key)}
                 stats={
@@ -801,12 +800,6 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
                   </>
                 }
               />
-
-              {!isOpen && shortRows.length > 0 && (
-                <p className="-mt-1 break-words px-3.5 pb-2.5 text-[12px] text-danger">
-                  не хватит: {shortRows.map((r) => `№${r.queue_no} ${who(r)}`).join(", ")}
-                </p>
-              )}
 
               {isOpen && (
                 <div className="flex flex-col border-t border-border px-2 pb-2 pt-1">

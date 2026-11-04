@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { GroupHeader, ItemHead, Segmented, Swatch, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
+import { GroupHeader, ItemHead, Segmented, shortList, Swatch, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
 import { QuantityModal, type QtyAction, unitLabel } from "@/components/productionPlan/QuantityModal";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
 import { Button } from "@/components/ui/Button";
@@ -509,7 +509,7 @@ function ColorsCard({ colors, onJump }: { colors: ColorPlan[]; onJump: (taskId: 
               <GroupHeader
                 lead={<Swatch color={c.color} />}
                 title={c.color ?? "Без цвета"}
-                subtitle={`для: ${clients.join(", ")}`}
+                subtitle={`для: ${shortList(clients)}`}
                 open={isOpen}
                 onToggle={() => toggle(key)}
                 stats={

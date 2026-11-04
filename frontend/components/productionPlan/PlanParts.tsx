@@ -240,3 +240,9 @@ export function Swatch({ color }: { color: string | null | undefined }) {
     />
   );
 }
+
+/** «А, Б, В и ещё 4» — длинные перечни клиентов не растягивают строку. */
+export function shortList(items: string[], limit = 3): string {
+  if (items.length <= limit) return items.join(", ");
+  return `${items.slice(0, limit).join(", ")} и ещё ${items.length - limit}`;
+}
