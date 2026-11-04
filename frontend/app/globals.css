@@ -42,7 +42,6 @@
 body {
   background-color: var(--color-bg);
   background-image: linear-gradient(135deg, #eef1f6 0%, #e7ecf3 40%, #eceef4 100%);
-  background-attachment: fixed;
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -50,11 +49,15 @@ body {
   overflow-x: clip;
 }
 
-/* Плавающие цветные пятна студийного фона — просвечивают сквозь стеклянные панели. */
+/* Цветные пятна студийного фона — просвечивают сквозь стеклянные панели.
+   Производительность: пятна неподвижны и без filter: blur — радиальный градиент и так
+   мягкий. Раньше они постоянно плавали, и браузер каждый кадр заново размывал фон под
+   всеми стеклянными карточками — отсюда лаги при прокрутке, особенно на телефонах.
+   Плавание оставлено только на больших экранах и только если система не просит
+   «меньше движения». */
 .blob {
   position: fixed;
   border-radius: 50%;
-  filter: blur(20px);
   z-index: -1;
   pointer-events: none;
 }
@@ -64,7 +67,6 @@ body {
   width: 620px;
   height: 620px;
   background: radial-gradient(circle at 30% 30%, rgba(120, 165, 255, 0.55), rgba(120, 165, 255, 0) 70%);
-  animation: floatBlob 18s ease-in-out infinite;
 }
 .blob-2 {
   top: 120px;
@@ -72,7 +74,6 @@ body {
   width: 680px;
   height: 680px;
   background: radial-gradient(circle at 50% 50%, rgba(196, 150, 255, 0.5), rgba(196, 150, 255, 0) 70%);
-  animation: floatBlob 22s ease-in-out infinite reverse;
 }
 .blob-3 {
   bottom: -180px;
@@ -80,14 +81,21 @@ body {
   width: 640px;
   height: 640px;
   background: radial-gradient(circle at 50% 50%, rgba(120, 225, 225, 0.42), rgba(120, 225, 225, 0) 70%);
-  animation: floatBlob 26s ease-in-out infinite;
 }
 
-/* Стеклянные карточки: плотное размытие + тонкая светлая кромка-«отражение». */
+@media (min-width: 1280px) and (prefers-reduced-motion: no-preference) {
+  .blob-1 { animation: floatBlob 18s ease-in-out infinite; }
+  .blob-2 { animation: floatBlob 22s ease-in-out infinite reverse; }
+  .blob-3 { animation: floatBlob 26s ease-in-out infinite; }
+}
+
+/* Стеклянные карточки: размытие + тонкая светлая кромка-«отражение».
+   Радиус размытия умеренный: цена backdrop-filter растёт с радиусом, а на глаз 16px
+   и 30px поверх мягкого фона почти не отличаются. */
 .glass {
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(16px) saturate(170%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow: 0 16px 40px rgba(40, 50, 90, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
@@ -95,10 +103,26 @@ body {
 /* Усиленное стекло — модалки, выпадающие списки, форма входа. */
 .glass-strong {
   background: rgba(248, 250, 255, 0.92);
-  backdrop-filter: blur(44px) saturate(180%);
-  -webkit-backdrop-filter: blur(44px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: 0 40px 100px rgba(30, 40, 80, 0.28);
+}
+
+/* Телефоны и планшеты: размытие под каждой карточкой — главная нагрузка на слабые GPU
+   при прокрутке. Заменяем его чуть более плотным фоном — вид почти тот же. Модалки и
+   выпадающие списки (.glass-strong) и так почти непрозрачные — им размытие тоже не нужно. */
+@media (max-width: 1023px) {
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-strong {
+    background: rgba(248, 250, 255, 0.97);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* iOS Safari зумит страницу при фокусе на поле со шрифтом < 16px. На тач-устройствах

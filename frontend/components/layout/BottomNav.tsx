@@ -103,7 +103,7 @@ export function BottomNav() {
       )}
 
       {/* Таб-бар */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-white/60 bg-white/80 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(40,50,90,0.08)] backdrop-blur-2xl backdrop-saturate-150 lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-white/60 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(40,50,90,0.08)] lg:hidden">
         {tabs.map((item) => {
           const active = isActive(item.href);
           const Icon = item.icon;

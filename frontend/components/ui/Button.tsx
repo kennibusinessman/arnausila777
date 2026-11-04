@@ -12,7 +12,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const variantClasses: Record<Variant, string> = {
   primary:
     "bg-gradient-to-br from-primary to-indigo text-white shadow-[0_8px_20px_rgba(110,110,240,0.34)] hover:opacity-95",
-  secondary: "bg-white/60 text-text border border-white/70 backdrop-blur-xl hover:bg-white/80",
+  // Без backdrop-blur: кнопок на странице много, размытие под каждой тормозит прокрутку.
+  secondary: "bg-white/75 text-text border border-white/70 hover:bg-white/90",
   ghost: "bg-transparent text-primary hover:bg-primary-50",
   success: "bg-success text-white shadow-sm shadow-success/20 hover:opacity-90",
   danger: "bg-[rgba(220,60,60,0.07)] text-[#bd4836] hover:bg-[rgba(220,60,60,0.12)]",

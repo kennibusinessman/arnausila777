@@ -28,7 +28,7 @@ export function Sidebar() {
               className={clsx(
                 "flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13.5px] font-medium transition-colors",
                 active
-                  ? "bg-white/70 text-text shadow-sm shadow-black/5 backdrop-blur-xl"
+                  ? "bg-white/80 text-text shadow-sm shadow-black/5"
                   : "text-muted hover:bg-white/30 hover:text-text"
               )}
             >
