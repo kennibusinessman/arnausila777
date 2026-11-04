@@ -3,26 +3,22 @@
 import { clsx } from "clsx";
 import {
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
   CalendarClock,
   Check,
-  ChevronDown,
   Droplets,
   Gift,
   Layers,
   PackageCheck,
-  Pencil,
   Plus,
   RotateCcw,
   Settings2,
   Timer,
   Trash2,
   Truck,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { GroupHeader, ItemHead, Segmented, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
 import { QuantityModal, type QtyAction, unitLabel } from "@/components/productionPlan/QuantityModal";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +47,7 @@ import {
   type SpunbondSettings,
   type TaskRow,
 } from "@/lib/types/productionPlan";
+import { clientComment } from "@/lib/utils/clientComment";
 import { formatDayMonth, formatNumber } from "@/lib/utils/format";
 
 /**
@@ -292,7 +289,7 @@ export function SpunbondPlan() {
               <>Закрепить {formatNumber(o.quantity)} за заданием без клиента?</>
             )}
           </p>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto [&>*]:flex-1 [&>*]:justify-center sm:[&>*]:flex-none">
             <Button
               variant="success"
               size="sm"
@@ -443,7 +440,9 @@ export function SpunbondPlan() {
                 >
                   <span className="min-w-0 flex-1">
                     <b className="text-text">{t.client_name || "Без клиента"}</b>
-                    {t.comment && <span className="font-semibold text-primary"> — {t.comment}</span>}
+                    {clientComment(t.comment, t.client_name) && (
+                      <span className="font-semibold text-primary"> — {clientComment(t.comment, t.client_name)}</span>
+                    )}
                     <span className="text-muted"> · {t.items.map((i) => i.product_name).join(", ")}</span>
                   </span>
                   <span className="tabular-nums text-muted">{sumByUnit(t.items, (i) => i.quantity)}</span>
@@ -522,28 +521,15 @@ function ColorsCard({ colors, onJump }: { colors: ColorPlan[]; onJump: (taskId: 
         </Button>
       }
     >
-      <div className="mb-3 inline-flex flex-wrap gap-1 rounded-xl bg-white/60 p-1" role="tablist" aria-label="Что показывать">
-        {(
-          [
-            { key: "all", label: "Общий — с бабинами для простыней" },
-            { key: "queue", label: "Только очередь спанбонда" },
-          ] as const
-        ).map((v) => (
-          <button
-            key={v.key}
-            type="button"
-            role="tab"
-            aria-selected={view === v.key}
-            onClick={() => setView(v.key)}
-            className={clsx(
-              "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
-              view === v.key ? "bg-primary text-white shadow-sm" : "text-muted hover:bg-white hover:text-text"
-            )}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        options={[
+          { key: "all", label: "Общий — с бабинами для простыней", short: "Общий (+ бабины)" },
+          { key: "queue", label: "Только очередь спанбонда", short: "Только очередь" },
+        ]}
+        value={view}
+        onChange={setView}
+        ariaLabel="Что показывать"
+      />
       {view === "all" && !hasSheets && (
         <p className="mb-2 text-[12.5px] text-muted">Плану простыней бабин хватает — докручивать их не нужно.</p>
       )}
@@ -556,34 +542,30 @@ function ColorsCard({ colors, onJump }: { colors: ColorPlan[]; onJump: (taskId: 
           const clients = [...new Set(c.entries.map((e) => e.client_name || "без клиента"))];
           return (
             <div key={key} className="rounded-xl border border-border bg-white/50">
-              <button
-                type="button"
-                onClick={() => toggle(key)}
-                aria-expanded={isOpen}
-                className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5 text-left text-[13px]"
-              >
-                <span className="flex min-w-0 flex-1 basis-48 items-center gap-2.5">
-                  <Swatch color={c.color} />
-                  <span className="min-w-0">
-                    <span className="block font-semibold text-text">{c.color ?? "Без цвета"}</span>
-                    <span className="block truncate text-[12px] text-muted">для: {clients.join(", ")}</span>
-                  </span>
-                </span>
-                <span className="tabular-nums">
-                  всего <b>{kg(totalKg)}</b>
-                </span>
-                {view === "all" && Number(c.sheets_kg) > 0 && (
-                  <span className="rounded-full bg-indigo/10 px-2 py-0.5 text-[12px] font-semibold text-indigo">
-                    бабины для простыней {kg(c.sheets_kg)}
-                  </span>
-                )}
-                {c.no_weight > 0 && (
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[12px] font-semibold text-slate-700">
-                    без веса: {c.no_weight}
-                  </span>
-                )}
-                <ChevronDown className={clsx("h-4 w-4 text-muted transition-transform", isOpen && "rotate-180")} />
-              </button>
+              <GroupHeader
+                lead={<Swatch color={c.color} />}
+                title={c.color ?? "Без цвета"}
+                subtitle={`для: ${clients.join(", ")}`}
+                open={isOpen}
+                onToggle={() => toggle(key)}
+                stats={
+                  <>
+                    <span>
+                      всего <b>{kg(totalKg)}</b>
+                    </span>
+                    {view === "all" && Number(c.sheets_kg) > 0 && (
+                      <span className="rounded-full bg-indigo/10 px-2 py-0.5 text-[12px] font-semibold text-indigo">
+                        бабины для простыней {kg(c.sheets_kg)}
+                      </span>
+                    )}
+                    {c.no_weight > 0 && (
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[12px] font-semibold text-slate-700">
+                        без веса: {c.no_weight}
+                      </span>
+                    )}
+                  </>
+                }
+              />
 
               {isOpen && (
                 <div className="flex flex-col border-t border-border px-2 pb-2 pt-1">
@@ -633,13 +615,13 @@ function groupByProduct(entries: ColorEntry[]): ProductGroupData[] {
 }
 
 function ProductGroup({ group: g, onJump }: { group: ProductGroupData; onJump: (taskId: string) => void }) {
-  const clients = new Set(g.entries.map((e) => `${e.client_name ?? ""}|${e.comment ?? ""}`)).size;
+  const clients = new Set(g.entries.map((e) => `${e.client_name ?? ""}|${clientComment(e.comment, e.client_name) ?? ""}`)).size;
   return (
     <div className="rounded-lg px-2 py-2">
       <div className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] text-text">
-        <span className="font-semibold">{g.productName}</span>
+        <span className="w-full break-words font-semibold leading-snug sm:w-auto">{g.productName}</span>
         <span>
-          — всего <b>{qty(g.quantity, g.unit)}</b>
+          <span className="hidden sm:inline">— </span>всего <b>{qty(g.quantity, g.unit)}</b>
         </span>
         {g.kg !== null && unitLabel(g.unit) !== "кг" && <span className="text-muted">({kg(g.kg)})</span>}
         {clients > 1 && (
@@ -663,7 +645,9 @@ function ClientLine({ entry: e, onJump }: { entry: ColorEntry; onJump: (taskId: 
     <>
       <span className="min-w-0 flex-1">
         <b className="text-text">{e.client_name || "Без клиента"}</b>
-        {e.comment && <span className="font-semibold text-primary"> ({e.comment})</span>} — {qty(e.quantity, e.unit)}
+        {clientComment(e.comment, e.client_name) && (
+          <span className="font-semibold text-primary"> ({clientComment(e.comment, e.client_name)})</span>
+        )} — {qty(e.quantity, e.unit)}
         {e.kg !== null && unitLabel(e.unit) !== "кг" && <span className="text-muted"> ({kg(e.kg)})</span>}
         <span className="text-muted">
           {" "}
@@ -746,44 +730,40 @@ function TaskCard({
         worst === "none" ? "border-danger/30" : worst === "partial" ? "border-warning/40" : "border-border"
       )}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl px-3 py-2.5 text-left hover:bg-white/60"
-      >
-        <span className="flex min-w-0 flex-1 basis-48 items-center gap-2">
-          <span className="w-6 shrink-0 text-[13px] font-bold tabular-nums text-muted">{index + 1}</span>
-          <span className="flex shrink-0 -space-x-1">
-            {colors.map((c) => (
-              <Swatch key={c ?? "-"} color={c} />
-            ))}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[14px] font-bold text-text" title={t.comment ?? undefined}>
-              {t.client_name || "Без клиента"}
-              {t.comment && <span className="font-semibold text-primary"> — {t.comment}</span>}
-            </span>
-            <span className="block truncate text-[12px] text-muted">{t.items.map((i) => i.product_name).join(", ")}</span>
-          </span>
-        </span>
-        <span className="shrink-0 text-right text-[13px] tabular-nums">
-          <b className="text-text">{sumByUnit(t.items, (i) => i.remaining)}</b>
-          {kgNeeded > 0 && t.items.some((i) => unitLabel(i.unit) !== "кг") && (
-            <span className="text-muted"> · {kg(kgNeeded)}</span>
-          )}
-        </span>
-        {chip && (
-          <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
-            {short > 0 ? `не хватает сырья: ${kg(short)}` : chip.label}
-          </span>
-        )}
-        <span className={clsx("shrink-0 text-[12.5px] tabular-nums", t.late ? "font-semibold text-danger" : "text-muted")}>
-          {t.eta ? `≈ ${formatDayMonth(t.eta)}` : ""}
-          {t.deadline && ` · срок ${formatDayMonth(t.deadline)}`}
-        </span>
-        <ChevronDown className={clsx("h-4 w-4 shrink-0 text-muted transition-transform", expanded && "rotate-180")} />
-      </button>
+      <TaskHeader
+        index={index}
+        client={t.client_name || "Без клиента"}
+        comment={clientComment(t.comment, t.client_name)}
+        names={t.items.map((i) => i.product_name).join(", ")}
+        lead={colors.map((c) => (
+          <Swatch key={c ?? "-"} color={c} />
+        ))}
+        expanded={expanded}
+        onToggle={onToggle}
+        amount={
+          <>
+            <b className="text-text">{sumByUnit(t.items, (i) => i.remaining)}</b>
+            {kgNeeded > 0 && t.items.some((i) => unitLabel(i.unit) !== "кг") && (
+              <span className="text-muted"> · {kg(kgNeeded)}</span>
+            )}
+          </>
+        }
+        meta={
+          <>
+            {chip && (
+              <span className={clsx("rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
+                {short > 0 ? `не хватает сырья: ${kg(short)}` : chip.label}
+              </span>
+            )}
+            {(t.eta || t.deadline) && (
+              <span className={clsx("text-[12.5px] tabular-nums", t.late ? "font-semibold text-danger" : "text-muted")}>
+                {t.eta ? `≈ ${formatDayMonth(t.eta)}` : ""}
+                {t.deadline && ` · срок ${formatDayMonth(t.deadline)}`}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {expanded && (
         <div className="border-t border-border px-3.5 pb-3 pt-2.5">
@@ -792,31 +772,15 @@ function TaskCard({
               <ItemLine key={i.id} item={i} onReady={() => onReady(i)} onShip={() => onShip(i)} />
             ))}
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
-            <span className="mr-auto flex items-center gap-1.5">
-              <Button variant="ghost" size="sm" onClick={() => onMove(index, -1)} disabled={busy || index === 0}>
-                <ArrowUp className="h-3.5 w-3.5" /> Выше
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => onMove(index, 1)} disabled={busy || isLast}>
-                <ArrowDown className="h-3.5 w-3.5" /> Ниже
-              </Button>
-            </span>
-            <Button variant="ghost" size="sm" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5" /> Изменить
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-              <X className="h-3.5 w-3.5" /> Отменить задание
-            </Button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-lg p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
-              aria-label="Удалить"
-              title="Удалить задание"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
+          <TaskActions
+            index={index}
+            isLast={isLast}
+            busy={busy}
+            onMove={onMove}
+            onEdit={onEdit}
+            onCancel={onCancel}
+            onDelete={onDelete}
+          />
         </div>
       )}
     </li>
@@ -832,35 +796,35 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
 
   return (
     <div className="rounded-xl border border-border bg-white/60 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Swatch color={i.color} />
-          <span className="min-w-0">
-            <span className="block truncate text-[13.5px] font-semibold text-text">{i.product_name}</span>
-            <span className="block text-[12.5px] tabular-nums text-muted">
-              {i.remaining > 0 ? (
-                <>
-                  осталось <b className="text-text">{q(i.remaining)}</b> из {q(i.quantity)}
-                </>
-              ) : (
-                <>всё сделано · {q(i.quantity)}</>
+      <ItemHead
+        lead={<Swatch color={i.color} />}
+        name={i.product_name}
+        sub={
+          i.remaining > 0 ? (
+            <>
+              осталось <b className="text-text">{q(i.remaining)}</b> из {q(i.quantity)}
+            </>
+          ) : (
+            <>всё сделано · {q(i.quantity)}</>
+          )
+        }
+        actions={
+          (i.remaining > 0 || i.awaiting_shipment > 0) && (
+            <>
+              {i.remaining > 0 && (
+                <Button variant="secondary" size="sm" onClick={onReady}>
+                  <PackageCheck className="h-3.5 w-3.5" /> Готово
+                </Button>
               )}
-            </span>
-          </span>
-        </div>
-        <div className="flex gap-1.5">
-          {i.remaining > 0 && (
-            <Button variant="secondary" size="sm" onClick={onReady}>
-              <PackageCheck className="h-3.5 w-3.5" /> Готово
-            </Button>
-          )}
-          {i.awaiting_shipment > 0 && (
-            <Button variant="success" size="sm" onClick={onShip}>
-              <Truck className="h-3.5 w-3.5" /> Отгрузить
-            </Button>
-          )}
-        </div>
-      </div>
+              {i.awaiting_shipment > 0 && (
+                <Button variant="success" size="sm" onClick={onShip}>
+                  <Truck className="h-3.5 w-3.5" /> Отгрузить
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
 
       {i.ready > 0 && (
         <>

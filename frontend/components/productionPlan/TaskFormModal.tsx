@@ -289,6 +289,10 @@ function LineEditor({
               disabled={locked}
               allowClear={false}
             />
+            {/* В поле длинное название обрезается — на телефоне показываем его целиком. */}
+            {product && product.name.length > 24 && (
+              <p className="-mt-1.5 break-words text-[12px] leading-snug text-muted sm:hidden">{product.name}</p>
+            )}
             <input
               type="number"
               min="1"

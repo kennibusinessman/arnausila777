@@ -2,25 +2,21 @@
 
 import { clsx } from "clsx";
 import {
-  ArrowDown,
-  ArrowUp,
   CalendarClock,
   Check,
-  ChevronDown,
   Gift,
   Layers,
   PackageCheck,
-  Pencil,
   Plus,
   RotateCcw,
   Settings2,
   Timer,
   Trash2,
   Truck,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { GroupHeader, ItemHead, Segmented, TaskActions, TaskHeader } from "@/components/productionPlan/PlanParts";
 import { QuantityModal, type QtyAction } from "@/components/productionPlan/QuantityModal";
 import { SpunbondPlan } from "@/components/productionPlan/SpunbondPlan";
 import { TaskFormModal } from "@/components/productionPlan/TaskFormModal";
@@ -50,6 +46,7 @@ import {
   type PlanSettings,
   type TaskRow,
 } from "@/lib/types/productionPlan";
+import { clientComment } from "@/lib/utils/clientComment";
 import { formatDayMonth, formatNumber } from "@/lib/utils/format";
 
 /**
@@ -301,7 +298,7 @@ function SheetsPlan() {
               <>Закрепить {pcs(o.quantity)} за заданием без клиента?</>
             )}
           </p>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto [&>*]:flex-1 [&>*]:justify-center sm:[&>*]:flex-none">
             <Button variant="success" size="sm" onClick={() => acceptOffer(o)} disabled={markReady.isPending}>
               <Check className="h-4 w-4" /> Да
             </Button>
@@ -523,46 +520,38 @@ function TaskCard({
         worst === "none" ? "border-danger/30" : worst === "partial" ? "border-warning/40" : "border-border"
       )}
     >
-      <div className="flex items-center gap-2 px-2.5 py-2">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-1.5 py-1 text-left hover:bg-white/60"
-        >
-          <span className="flex min-w-0 flex-1 basis-48 items-center gap-2">
-            <span className="w-6 shrink-0 text-[13px] font-bold tabular-nums text-muted">{index + 1}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-[14px] font-bold text-text" title={t.comment ?? undefined}>
-                {t.client_name || "Без клиента"}
-                {t.comment && <span className="font-semibold text-primary"> — {t.comment}</span>}
-              </span>
-              <span className="block truncate text-[12px] text-muted">{names}</span>
-            </span>
-          </span>
-          <span className="shrink-0 text-right text-[13px] tabular-nums">
+      <TaskHeader
+        index={index}
+        client={t.client_name || "Без клиента"}
+        comment={clientComment(t.comment, t.client_name)}
+        names={names}
+        expanded={expanded}
+        onToggle={onToggle}
+        amount={
+          <>
             <b className="text-text">{pcs(t.remaining)}</b>
             {t.remaining !== t.quantity && <span className="text-muted"> из {pcs(t.quantity)}</span>}
-          </span>
-          {chip && (
-            <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
-              {worst === "none" || worst === "partial" ? `не хватает бабин: ${formatNumber(short)}` : chip.label}
-            </span>
-          )}
-          {badge && (
-            <span className={clsx("shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold", badge.className)}>
-              {badge.label}
-            </span>
-          )}
-          <span className={clsx("shrink-0 text-[12.5px] tabular-nums", t.late ? "font-semibold text-danger" : "text-muted")}>
-            {t.eta ? `≈ ${formatDayMonth(t.eta)}` : ""}
-            {t.deadline && ` · срок ${formatDayMonth(t.deadline)}`}
-          </span>
-          <ChevronDown
-            className={clsx("h-4 w-4 shrink-0 text-muted transition-transform", expanded && "rotate-180")}
-          />
-        </button>
-      </div>
+          </>
+        }
+        meta={
+          <>
+            {chip && (
+              <span className={clsx("rounded-full px-2 py-0.5 text-[12px] font-semibold", chip.className)}>
+                {worst === "none" || worst === "partial" ? `не хватает бабин: ${formatNumber(short)}` : chip.label}
+              </span>
+            )}
+            {badge && (
+              <span className={clsx("rounded-full px-2 py-0.5 text-[12px] font-semibold", badge.className)}>{badge.label}</span>
+            )}
+            {(t.eta || t.deadline) && (
+              <span className={clsx("text-[12.5px] tabular-nums", t.late ? "font-semibold text-danger" : "text-muted")}>
+                {t.eta ? `≈ ${formatDayMonth(t.eta)}` : ""}
+                {t.deadline && ` · срок ${formatDayMonth(t.deadline)}`}
+              </span>
+            )}
+          </>
+        }
+      />
 
       {expanded && (
         <div className="border-t border-border px-3.5 pb-3 pt-2.5">
@@ -571,31 +560,15 @@ function TaskCard({
               <ItemLine key={i.id} item={i} onReady={() => onReady(i)} onShip={() => onShip(i)} />
             ))}
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5">
-            <span className="mr-auto flex items-center gap-1.5">
-              <Button variant="ghost" size="sm" onClick={() => onMove(index, -1)} disabled={busy || index === 0}>
-                <ArrowUp className="h-3.5 w-3.5" /> Выше
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => onMove(index, 1)} disabled={busy || isLast}>
-                <ArrowDown className="h-3.5 w-3.5" /> Ниже
-              </Button>
-            </span>
-            <Button variant="ghost" size="sm" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5" /> Изменить
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-              <X className="h-3.5 w-3.5" /> Отменить задание
-            </Button>
-            <button
-              type="button"
-              onClick={onDelete}
-              className="rounded-lg p-1.5 text-muted hover:bg-danger-bg hover:text-danger"
-              aria-label="Удалить"
-              title="Удалить задание"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
+          <TaskActions
+            index={index}
+            isLast={isLast}
+            busy={busy}
+            onMove={onMove}
+            onEdit={onEdit}
+            onCancel={onCancel}
+            onDelete={onDelete}
+          />
         </div>
       )}
     </li>
@@ -610,33 +583,35 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
 
   return (
     <div className="rounded-xl bg-white/60 px-3 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="text-[13.5px] font-semibold text-text">{i.product_name}</span>
-          <span className="ml-2 text-[12.5px] tabular-nums text-muted">
-            {i.remaining > 0 ? (
-              <>
-                осталось <b className="text-text">{pcs(i.remaining)}</b>
-                {i.remaining !== i.quantity && ` из ${pcs(i.quantity)}`}
-              </>
-            ) : (
-              <>всё сделано · {pcs(i.quantity)}</>
-            )}
-          </span>
-        </div>
-        <div className="flex gap-1.5">
-          {i.remaining > 0 && (
-            <Button variant="secondary" size="sm" onClick={onReady}>
-              <PackageCheck className="h-3.5 w-3.5" /> Готово
-            </Button>
-          )}
-          {i.awaiting_shipment > 0 && (
-            <Button variant="success" size="sm" onClick={onShip}>
-              <Truck className="h-3.5 w-3.5" /> Отгрузить
-            </Button>
-          )}
-        </div>
-      </div>
+      <ItemHead
+        name={i.product_name}
+        sub={
+          i.remaining > 0 ? (
+            <>
+              осталось <b className="text-text">{pcs(i.remaining)}</b>
+              {i.remaining !== i.quantity && ` из ${pcs(i.quantity)}`}
+            </>
+          ) : (
+            <>всё сделано · {pcs(i.quantity)}</>
+          )
+        }
+        actions={
+          (i.remaining > 0 || i.awaiting_shipment > 0) && (
+            <>
+              {i.remaining > 0 && (
+                <Button variant="secondary" size="sm" onClick={onReady}>
+                  <PackageCheck className="h-3.5 w-3.5" /> Готово
+                </Button>
+              )}
+              {i.awaiting_shipment > 0 && (
+                <Button variant="success" size="sm" onClick={onShip}>
+                  <Truck className="h-3.5 w-3.5" /> Отгрузить
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
 
       {i.ready > 0 && (
         <>
@@ -695,10 +670,10 @@ function ItemLine({ item: i, onReady, onShip }: { item: ItemRow; onReady: () => 
 
 type BobbinSort = "clients" | "colors" | "names";
 
-const BOBBIN_SORTS: { key: BobbinSort; label: string }[] = [
-  { key: "clients", label: "По клиентам" },
-  { key: "colors", label: "По цветам" },
-  { key: "names", label: "По наименованию" },
+const BOBBIN_SORTS: { key: BobbinSort; label: string; short: string }[] = [
+  { key: "clients", label: "По клиентам", short: "Клиенты" },
+  { key: "colors", label: "По цветам", short: "Цвета" },
+  { key: "names", label: "По наименованию", short: "Бабины" },
 ];
 
 const SORT_KEY = "production-plan:bobbin-sort";
@@ -779,7 +754,7 @@ function buildGroups(bobbins: BobbinNeed[], sort: BobbinSort): BobbinGroup[] {
   for (const r of [...rows].sort(byQueue)) tasks.set(r.task_id, [...(tasks.get(r.task_id) ?? []), r]);
   return [...tasks.entries()].map(([taskId, rs]) => ({
     key: `task:${taskId}`,
-    title: `№${rs[0]!.queue_no} · ${rs[0]!.client_name || "Без клиента"}${rs[0]!.comment ? ` — ${rs[0]!.comment}` : ""}`,
+    title: `№${rs[0]!.queue_no} · ${rs[0]!.client_name || "Без клиента"}${clientComment(rs[0]!.comment, rs[0]!.client_name) ? ` — ${clientComment(rs[0]!.comment, rs[0]!.client_name)}` : ""}`,
     subtitle: [...new Set(rs.map((r) => r.product_name))].join(", "),
     needed: sumBy(rs, (r) => r.needed),
     // Склад общий для всей очереди: показываем, сколько этих бабин лежит сейчас.
@@ -832,23 +807,7 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
         </Button>
       }
     >
-      <div className="mb-3 inline-flex flex-wrap gap-1 rounded-xl bg-white/60 p-1" role="tablist" aria-label="Сортировка бабин">
-        {BOBBIN_SORTS.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            role="tab"
-            aria-selected={sort === s.key}
-            onClick={() => choose(s.key)}
-            className={clsx(
-              "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
-              sort === s.key ? "bg-primary text-white shadow-sm" : "text-muted hover:bg-white hover:text-text"
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      <Segmented options={BOBBIN_SORTS} value={sort} onChange={choose} ariaLabel="Сортировка бабин" />
 
       <div className="flex flex-col gap-2">
         {groups.map((g) => {
@@ -860,37 +819,35 @@ function BobbinsCard({ bobbins, onJump }: { bobbins: BobbinNeed[]; onJump: (task
               key={g.key}
               className={clsx("rounded-xl border bg-white/50", g.short > 0 ? "border-danger/30" : "border-border")}
             >
-              <button
-                type="button"
-                onClick={() => toggle(g.key)}
-                aria-expanded={isOpen}
-                className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2.5 text-left text-[13px]"
-              >
-                <span className="min-w-0 flex-1 basis-48">
-                  <span className="block font-semibold text-text">{g.title}</span>
-                  <span className="block truncate text-[12px] text-muted">{g.subtitle}</span>
-                </span>
-                <span className="tabular-nums">
-                  нужно бабин <b>{formatNumber(g.needed)}</b>
-                </span>
-                <span className="tabular-nums">
-                  на складе <b>{formatNumber(g.onStock, 0)}</b>
-                </span>
-                {g.short > 0 ? (
-                  <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
-                    {sort === "clients" ? "не хватает" : "докупить"} {formatNumber(g.short)}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">хватает</span>
-                )}
-                <ChevronDown className={clsx("h-4 w-4 text-muted transition-transform", isOpen && "rotate-180")} />
-              </button>
+              <GroupHeader
+                title={g.title}
+                subtitle={g.subtitle}
+                open={isOpen}
+                onToggle={() => toggle(g.key)}
+                stats={
+                  <>
+                    <span>
+                      нужно бабин <b>{formatNumber(g.needed)}</b>
+                    </span>
+                    <span>
+                      на складе <b>{formatNumber(g.onStock, 0)}</b>
+                    </span>
+                    {g.short > 0 ? (
+                      <span className="rounded-full bg-danger-bg px-2 py-0.5 font-semibold text-danger">
+                        {sort === "clients" ? "не хватает" : "докупить"} {formatNumber(g.short)}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-success-bg px-2 py-0.5 font-semibold text-success">хватает</span>
+                    )}
+                  </>
+                }
+              />
 
               {!isOpen && shortRows.length > 0 && sort !== "clients" && (
                 <p className="-mt-1 px-3.5 pb-2.5 text-[12px] text-danger">
                   не хватит:{" "}
                   {shortRows
-                    .map((r) => `№${r.queue_no} ${r.client_name || "без клиента"}${r.comment ? ` (${r.comment})` : ""}`)
+                    .map((r) => `№${r.queue_no} ${r.client_name || "без клиента"}${clientComment(r.comment, r.client_name) ? ` (${clientComment(r.comment, r.client_name)})` : ""}`)
                     .join(", ")}
                 </p>
               )}
@@ -933,7 +890,9 @@ function UseLine({ row: r, showClient, onClick }: { row: UseRow; showClient: boo
         {showClient && (
           <span className="block text-[12px] font-semibold text-muted">
             №{r.queue_no} · {r.client_name || "Без клиента"}
-            {r.comment && <span className="text-primary"> — {r.comment}</span>}
+            {clientComment(r.comment, r.client_name) && (
+              <span className="text-primary"> — {clientComment(r.comment, r.client_name)}</span>
+            )}
           </span>
         )}
         <span className="block text-text">
