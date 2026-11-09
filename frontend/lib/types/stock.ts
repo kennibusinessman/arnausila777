@@ -135,6 +135,15 @@ export interface DemandRow {
   short: string;
 }
 
+/** Бабина простыни: остаток и на сколько простыней хватит (null — нет нормы). */
+export interface SheetBobbin {
+  bobbin_id: string;
+  name: string;
+  on_stock: string;
+  roll_norm: number | null;
+  sheets_possible: number | null;
+}
+
 export interface ProductDemand {
   product_id: string;
   name: string;
@@ -143,4 +152,6 @@ export interface ProductDemand {
   needed: string;
   short: string;
   rows: DemandRow[];
+  /** Для простыни — её бабины; у остальных товаров пусто. */
+  bobbins: SheetBobbin[];
 }

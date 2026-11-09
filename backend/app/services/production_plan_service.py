@@ -63,6 +63,7 @@ from app.schemas.production_plan import (
     PlanResponse,
     PlanSettings,
     ProductDemand,
+    SheetBobbin,
     TaskCreate,
     TaskItemIn,
     TaskRow,
@@ -568,6 +569,20 @@ async def product_demand(db: AsyncSession, product_id: uuid.UUID) -> ProductDema
                         )
                     )
 
+    bobbins = [
+        SheetBobbin(
+            bobbin_id=b.id,
+            name=b.name,
+            on_stock=stock.get(b.id, Decimal(0)),
+            roll_norm=b.roll_norm,
+            sheets_possible=(
+                int(max(stock.get(b.id, Decimal(0)), Decimal(0))) * b.roll_norm if b.roll_norm else None
+            ),
+        )
+        for b in by_target.get(product_id, [])
+    ]
+    bobbins.sort(key=lambda x: (-x.on_stock, x.name))
+
     return ProductDemand(
         product_id=product.id,
         name=product.name,
@@ -576,6 +591,7 @@ async def product_demand(db: AsyncSession, product_id: uuid.UUID) -> ProductDema
         needed=sum((r.needed for r in rows), Decimal(0)),
         short=sum((r.short for r in rows), Decimal(0)),
         rows=rows,
+        bobbins=bobbins,
     )
 
 

@@ -320,6 +320,17 @@ class DemandRow(BaseModel):
     short: Decimal
 
 
+class SheetBobbin(BaseModel):
+    """Бабина, привязанная к простыне: сколько на складе и на сколько простыней
+    хватит по норме выхода (None — норма не указана)."""
+
+    bobbin_id: uuid.UUID
+    name: str
+    on_stock: Decimal
+    roll_norm: int | None
+    sheets_possible: int | None
+
+
 class ProductDemand(BaseModel):
     product_id: uuid.UUID
     name: str
@@ -328,3 +339,5 @@ class ProductDemand(BaseModel):
     needed: Decimal
     short: Decimal
     rows: list[DemandRow]
+    # Для простыни — её бабины на складе; у остальных товаров пусто.
+    bobbins: list[SheetBobbin] = []

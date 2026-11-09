@@ -451,5 +451,12 @@ async def test_stock_demand_per_client(client, admin_headers):
     r = await client.get(f"/stock/demand/{sheet['id']}", headers=admin_headers)
     [row] = r.json()["rows"]
     assert (row["via"], float(row["needed"]), float(row["short"])) == ("direct", 1500, 1500)
+    # У простыни видно её бабины на складе: 300 шт × норма 1000.
+    [bob] = r.json()["bobbins"]
+    assert (bob["bobbin_id"], float(bob["on_stock"]), bob["roll_norm"], bob["sheets_possible"]) == (
+        bobbin["id"], 300, 1000, 300000,
+    )
+    r = await client.get(f"/stock/demand/{bobbin['id']}", headers=admin_headers)
+    assert r.json()["bobbins"] == []
     r = await client.get(f"/stock/demand/{uuid.uuid4()}", headers=admin_headers)
     assert r.status_code == 404
