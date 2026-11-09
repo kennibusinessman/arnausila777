@@ -52,6 +52,7 @@ from app.models import (
 from app.schemas.production_plan import (
     BobbinNeed,
     BobbinUse,
+    DemandRow,
     FreeStock,
     ItemOrder,
     ItemRow,
@@ -61,6 +62,7 @@ from app.schemas.production_plan import (
     PlanProductOption,
     PlanResponse,
     PlanSettings,
+    ProductDemand,
     TaskCreate,
     TaskItemIn,
     TaskRow,
@@ -483,6 +485,97 @@ async def build_plan(db: AsyncSession, today: date | None = None) -> PlanRespons
             if cum_sheets
             else None
         ),
+    )
+
+
+async def product_demand(db: AsyncSession, product_id: uuid.UUID) -> ProductDemand:
+    """Кому сколько нужно наименования по активным заданиям обеих линий.
+
+    Показываем всех, даже если склада не хватает. Склад делится сверху вниз по
+    очереди (сначала простыни, потом спанбонд): готовое, отложенное для
+    клиента, — его; остальной склад достаётся первым по очереди.
+    """
+    product = await db.get(Product, product_id)
+    if product is None:
+        raise NotFoundError("Товар не найден")
+    stock = await _stock_by_product(db)
+    on_stock = stock.get(product_id, Decimal(0))
+    by_target = await _bobbin_index(db)
+    usage = await _bobbin_usage(db)
+
+    active = await _active_tasks(db)
+    sheets = [t for t in active if t.kind == ProductionTaskKind.SHEETS]
+    spunbond = [t for t in active if t.kind == ProductionTaskKind.SPUNBOND]
+    names, clients, _ = await _load_context(db, active)
+
+    # Отложенное для клиентов лежит на складе, но уже не свободно.
+    reserved = sum(
+        (Decimal(i.ready - i.shipped) for t in active for i in t.items if i.product_id == product_id),
+        Decimal(0),
+    )
+    free = max(on_stock - reserved, Decimal(0))
+
+    rows: list[DemandRow] = []
+    for queue in (sheets, spunbond):
+        for queue_no, t in enumerate(queue, start=1):
+            client_name = clients.get(t.client_id) if t.client_id else None
+            base = dict(
+                task_id=t.id,
+                kind=t.kind,
+                queue_no=queue_no,
+                client_name=client_name,
+                comment=t.comment,
+                deadline=t.deadline,
+            )
+            for i in t.items:
+                if i.product_id == product_id:
+                    need = Decimal(i.quantity - i.shipped)
+                    if need <= 0:
+                        continue
+                    held = Decimal(max(i.ready - i.shipped, 0))
+                    take = min(need - held, free)
+                    free -= take
+                    rows.append(
+                        DemandRow(
+                            **base,
+                            via="direct",
+                            needed=need,
+                            ready=held,
+                            from_stock=held + take,
+                            short=need - held - take,
+                        )
+                    )
+                elif t.kind == ProductionTaskKind.SHEETS:
+                    remaining = i.quantity - i.ready
+                    if remaining <= 0:
+                        continue
+                    bobbin = _pick_bobbin(i, by_target, stock, usage)
+                    if bobbin is None or bobbin.id != product_id or not bobbin.roll_norm:
+                        continue
+                    need = Decimal(math.ceil(remaining / bobbin.roll_norm))
+                    take = min(need, free)
+                    free -= take
+                    sheet = names.get(i.product_id)
+                    rows.append(
+                        DemandRow(
+                            **base,
+                            via="bobbin",
+                            for_product_name=sheet.name if sheet else "—",
+                            sheets=remaining,
+                            needed=need,
+                            from_stock=take,
+                            short=need - take,
+                        )
+                    )
+
+    return ProductDemand(
+        product_id=product.id,
+        name=product.name,
+        unit=product.unit,
+        on_stock=on_stock,
+        needed=sum((r.needed for r in rows), Decimal(0)),
+        short=sum((r.short for r in rows), Decimal(0)),
+        rows=rows,
     )
 
 

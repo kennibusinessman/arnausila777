@@ -40,7 +40,8 @@ from app.schemas.stock import (
     StockMovementHistoryRead,
     StockMovementRead,
 )
-from app.services import audit_service, stock_service
+from app.schemas.production_plan import ProductDemand
+from app.services import audit_service, production_plan_service, stock_service
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 balances_repo = CRUDRepository(StockBalance)
@@ -210,6 +211,12 @@ async def item_history(
         )
     rows.reverse()  # новые сверху — как в списке движений
     return rows
+
+
+@router.get("/demand/{product_id}", response_model=ProductDemand)
+async def get_demand(product_id: uuid.UUID, actor: StockUser, db: DbSession) -> ProductDemand:
+    """Кому сколько нужно наименования по активным заданиям плана производства."""
+    return await production_plan_service.product_demand(db, product_id)
 
 
 @router.post("/adjustments", response_model=StockMovementRead, status_code=201)

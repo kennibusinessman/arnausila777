@@ -24,6 +24,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { ProductFormModal } from "@/components/products/ProductFormModal";
 import { MaterialFormModal } from "@/components/materials/MaterialFormModal";
+import { ProductDemandList } from "@/components/stock/ProductDemandList";
 import { StockHistoryModal, type StockHistoryItem } from "@/components/stock/StockHistoryModal";
 import { useCan } from "@/lib/auth/permissions";
 import { useMaterialOptions } from "@/lib/hooks/useMaterials";
@@ -715,18 +716,14 @@ export default function StockPage() {
                           key={row.key}
                           className={clsx(COLS, "w-full rounded-2xl px-3 py-3 transition-colors hover:bg-white/50")}
                         >
-                          {canOpenCard(row) ? (
-                            <button
-                              type="button"
-                              onClick={() => openCard(row)}
-                              title="Открыть карточку"
-                              className="truncate text-left text-[13.5px] font-semibold text-text hover:text-primary hover:underline"
-                            >
-                              {row.name}
-                            </button>
-                          ) : (
-                            <span className="truncate text-[13.5px] font-semibold text-text">{row.name}</span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBalance(row)}
+                            title="Кому нужно, движения, карточка"
+                            className="truncate text-left text-[13.5px] font-semibold text-text hover:text-primary hover:underline"
+                          >
+                            {row.name}
+                          </button>
                           <span className="flex min-w-0 flex-col gap-1">
                             {catColor ? (
                               <span
@@ -1005,7 +1002,7 @@ export default function StockPage() {
         </form>
       </Modal>
 
-      {/* Поп-ап по позиции остатка (мобильные карточки) */}
+      {/* Поп-ап по позиции остатка: клик по наименованию / мобильной карточке */}
       <DetailModal
         open={!!selectedBalance}
         title={selectedBalance?.name ?? ""}
@@ -1073,7 +1070,11 @@ export default function StockPage() {
             </>
           )
         }
-      />
+      >
+        {selectedBalance?.item_type === ItemType.PRODUCT && selectedBalance.product_id && (
+          <ProductDemandList productId={selectedBalance.product_id} />
+        )}
+      </DetailModal>
 
       {/* Поп-ап по движению склада (мобильные карточки) */}
       <DetailModal

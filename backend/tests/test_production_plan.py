@@ -415,3 +415,41 @@ async def test_comment_in_bobbin_uses(client, admin_headers):
     plan = await _task(client, admin_headers, [(sheet["id"], 200)], client_id=c["id"], comment="Мегафарм")
     uses = plan["bobbins"][0]["uses"]
     assert [u["comment"] for u in uses] == ["Склад", "Мегафарм"]
+
+
+async def test_stock_demand_per_client(client, admin_headers):
+    """Остатки → наименование: кому сколько нужно, даже если склада не хватает.
+    На складе 300 бабин; 2 из них уйдут на простыню (очередь простыней идёт
+    первой), Александру по спанбонду 400, Ботагоз 500."""
+    wh = await create_warehouse(client, admin_headers)
+    sheet = await _sheet(client, admin_headers)
+    bobbin = await _bobbin(client, admin_headers, norm=1000, sheet_id=sheet["id"])
+    await _stock(client, admin_headers, wh, bobbin, 300)
+    alex = await create_client_entity(client, admin_headers)
+    bota = await create_client_entity(client, admin_headers)
+
+    spun = {"kind": "SPUNBOND"}
+    await _task(client, admin_headers, [(bobbin["id"], 400)], client_id=alex["id"], **spun)
+    await _task(client, admin_headers, [(bobbin["id"], 500)], client_id=bota["id"], comment="склад 2", **spun)
+    await _task(client, admin_headers, [(sheet["id"], 1500)])
+
+    r = await client.get(f"/stock/demand/{bobbin['id']}", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert float(d["on_stock"]) == 300
+    assert float(d["needed"]) == 902 and float(d["short"]) == 602
+    c, a, b = d["rows"]
+    assert (c["via"], c["for_product_name"], c["sheets"], float(c["needed"]), float(c["short"])) == (
+        "bobbin", sheet["name"], 1500, 2, 0,
+    )
+    assert (a["client_name"], a["via"], float(a["needed"]), float(a["from_stock"]), float(a["short"])) == (
+        alex["name"], "direct", 400, 298, 102,
+    )
+    assert (b["client_name"], b["comment"], float(b["needed"]), float(b["short"])) == (bota["name"], "склад 2", 500, 500)
+
+    # Сама простыня заказана напрямую; несуществующий товар — 404.
+    r = await client.get(f"/stock/demand/{sheet['id']}", headers=admin_headers)
+    [row] = r.json()["rows"]
+    assert (row["via"], float(row["needed"]), float(row["short"])) == ("direct", 1500, 1500)
+    r = await client.get(f"/stock/demand/{uuid.uuid4()}", headers=admin_headers)
+    assert r.status_code == 404

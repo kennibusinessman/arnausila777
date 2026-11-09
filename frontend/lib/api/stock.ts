@@ -8,6 +8,7 @@ import type {
   InventoryHistoryRead,
   InventoryItemRead,
   InventoryResult,
+  ProductDemand,
   StockBalanceRead,
   StockMovementHistoryRead,
   StockMovementRead,
@@ -65,3 +66,7 @@ export const listInventoryHistory = (params: Partial<PageParams> = {}) =>
 /** Результат одной инвентаризации. */
 export const getInventoryHistory = (id: string) =>
   http.get<InventoryHistoryDetail>(`/stock/inventory/history/${id}`);
+
+/** Кому сколько нужно товара по активным заданиям плана производства. */
+export const getProductDemand = (productId: string) =>
+  http.get<ProductDemand>(`/stock/demand/${productId}`);

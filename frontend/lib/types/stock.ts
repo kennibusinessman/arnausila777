@@ -115,3 +115,32 @@ export interface InventoryHistoryRead {
 export interface InventoryHistoryDetail extends InventoryHistoryRead {
   lines: InventoryChange[];
 }
+
+/** Кому нужно наименование: одна позиция активного задания плана производства.
+ *  direct — заказано напрямую; bobbin — бабина уйдёт на простыню for_product_name. */
+export interface DemandRow {
+  task_id: string;
+  kind: "SHEETS" | "SPUNBOND";
+  queue_no: number;
+  client_name: string | null;
+  comment: string | null;
+  deadline: string | null;
+  via: "direct" | "bobbin";
+  for_product_name: string | null;
+  sheets: number | null;
+  needed: string;
+  /** Уже отложено на складе для этого клиента (только direct). */
+  ready: string;
+  from_stock: string;
+  short: string;
+}
+
+export interface ProductDemand {
+  product_id: string;
+  name: string;
+  unit: string;
+  on_stock: string;
+  needed: string;
+  short: string;
+  rows: DemandRow[];
+}

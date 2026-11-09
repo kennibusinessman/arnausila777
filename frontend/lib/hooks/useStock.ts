@@ -3,6 +3,7 @@ import {
   applyInventory,
   createStockAdjustment,
   deleteStockMovement,
+  getProductDemand,
   getInventoryHistory,
   listInventory,
   listInventoryHistory,
@@ -35,6 +36,15 @@ export function useStockItemHistory(params: ItemHistoryParams | null) {
     queryKey: ["stock-history", params],
     queryFn: () => listStockItemHistory(params!).then((r) => r.data),
     enabled: params !== null,
+  });
+}
+
+/** Кому сколько нужно товара. productId=null — запрос не выполняется. */
+export function useProductDemand(productId: string | null) {
+  return useQuery({
+    queryKey: ["stock-demand", productId],
+    queryFn: () => getProductDemand(productId!).then((r) => r.data),
+    enabled: productId !== null,
   });
 }
 

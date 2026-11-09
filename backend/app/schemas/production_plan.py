@@ -293,3 +293,38 @@ class SpunbondPlanResponse(BaseModel):
     no_weight: int
     total_shifts: Decimal
     finish_date: date | None
+
+
+class DemandRow(BaseModel):
+    """Кому нужно наименование: одна позиция активного задания.
+
+    via=direct — наименование заказано в задании напрямую (нужно = заказано −
+    отгружено, из них `ready` уже отложено на складе для клиента);
+    via=bobbin — это бабина, которая уйдёт на простыню `for_product_name`.
+    Склад расходуется сверху вниз по очереди: `from_stock` — сколько покрывает
+    склад, `short` — сколько не хватает.
+    """
+
+    task_id: uuid.UUID
+    kind: ProductionTaskKind
+    queue_no: int
+    client_name: str | None
+    comment: str | None = None
+    deadline: date | None = None
+    via: str
+    for_product_name: str | None = None
+    sheets: int | None = None
+    needed: Decimal
+    ready: Decimal = Decimal(0)
+    from_stock: Decimal
+    short: Decimal
+
+
+class ProductDemand(BaseModel):
+    product_id: uuid.UUID
+    name: str
+    unit: str
+    on_stock: Decimal
+    needed: Decimal
+    short: Decimal
+    rows: list[DemandRow]
